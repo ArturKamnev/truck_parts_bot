@@ -20,11 +20,11 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "users",
-        sa.Column("broadcasts_enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("broadcasts_enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
     )
     op.add_column(
         "users",
-        sa.Column("is_unavailable", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_unavailable", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
     op.add_column("operator_sessions", sa.Column("workflow_state", sa.String(length=64)))
     op.add_column("operator_sessions", sa.Column("active_broadcast_id", sa.Integer()))

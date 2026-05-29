@@ -43,7 +43,7 @@ def upgrade() -> None:
             "new_ticket_notifications_enabled",
             sa.Boolean(),
             nullable=False,
-            server_default=sa.text("1"),
+            server_default=sa.true(),
         ),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()

@@ -13,8 +13,10 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    false,
     func,
     text,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -45,10 +47,10 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     broadcasts_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=text("1")
+        Boolean, nullable=False, default=True, server_default=true()
     )
     is_unavailable: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default=text("0")
+        Boolean, nullable=False, default=False, server_default=false()
     )
 
     tickets: Mapped[list[Ticket]] = relationship(back_populates="customer")
@@ -208,7 +210,7 @@ class ManagerPreference(Base):
 
     manager_telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     new_ticket_notifications_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=text("1")
+        Boolean, nullable=False, default=True, server_default=true()
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
