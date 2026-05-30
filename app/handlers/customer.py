@@ -10,6 +10,7 @@ from aiogram.types import CallbackQuery, Message
 from app.db.models import OperatorSession, User
 from app.db.session import SessionLocal
 from app.filters.roles import IsCustomer
+from app.i18n.translator import get_button_text_set, translate
 from app.keyboards.constants import (
     CUSTOMER_ASK_AI,
     CUSTOMER_BROADCASTS_OFF,
@@ -45,15 +46,18 @@ from app.utils.exceptions import (
 logger = logging.getLogger(__name__)
 router = Router(name="customer")
 
-CUSTOMER_MENU_TEXTS = {
-    CUSTOMER_ASK_AI,
-    CUSTOMER_CONTACT_MANAGER,
-    CUSTOMER_CANCEL,
-    CUSTOMER_CANCEL_REQUEST,
-    CUSTOMER_CLOSE_CHAT,
-    CUSTOMER_BROADCASTS_ON,
-    CUSTOMER_BROADCASTS_OFF,
-}
+CUSTOMER_MENU_TEXTS = set()
+for key in [
+    "customer.ask_ai",
+    "customer.contact_manager",
+    "customer.cancel",
+    "customer.cancel_request",
+    "customer.close_chat",
+    "customer.broadcasts_on",
+    "customer.broadcasts_off",
+    "bot.language_btn",
+]:
+    CUSTOMER_MENU_TEXTS.update(get_button_text_set(key))
 
 
 def _get_ui_services(
@@ -265,6 +269,7 @@ async def start(
             username=message.from_user.username,
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
+            language_code=message.from_user.language_code,
         )
     async with SessionLocal() as session:
         ui, _ = _get_ui_services(

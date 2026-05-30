@@ -52,6 +52,9 @@ class User(Base):
     is_unavailable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    preferred_language: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )
 
     tickets: Mapped[list[Ticket]] = relationship(back_populates="customer")
     ai_messages: Mapped[list[AIMessage]] = relationship(back_populates="customer")

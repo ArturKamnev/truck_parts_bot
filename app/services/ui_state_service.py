@@ -21,6 +21,7 @@ from app.services.keyboard_service import KeyboardService
 from app.services.settings_service import SettingsService
 from app.services.ticket_service import TicketService
 from app.utils.enums import CustomerMode, OwnerWorkflowState, TicketStatus
+from app.i18n.translator import translate
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class UIStateService:
             last_name=None,
         )
         role = self.authorization.detect_role(user_id)
+        locale = user.preferred_language or "ru"
 
         text = ""
         reply_markup: ReplyKeyboardMarkup | ReplyKeyboardRemove = ReplyKeyboardRemove()
@@ -93,46 +95,48 @@ class UIStateService:
                     draft = await session.get(Broadcast, op_session.active_broadcast_id)
 
                 if workflow_state == OwnerWorkflowState.CREATING_BROADCAST_CONTENT.value:
-                    text = "Отправьте сообщение для рассылки. Можно отправить текст, фото, видео, документ или файл с подписью."
+                    text = translate("broadcast.enter_content", locale)
                 elif workflow_state == OwnerWorkflowState.CHOOSING_BROADCAST_BUTTONS.value:
-                    text = f"Черновик #{draft.id if draft else ''} сохранён.\nДобавить кнопки к сообщению?"
-                    inline_markup = broadcast_button_selection_keyboard(self.settings)
+                    saved_prefix = f"Черновик #{draft.id if draft else ''} " + translate("common.saved", locale)
+                    text = f"{saved_prefix}\n{translate('broadcast.choosing_buttons', locale)}"
+                    inline_markup = broadcast_button_selection_keyboard(self.settings, locale)
                 elif workflow_state == OwnerWorkflowState.PREVIEWING_BROADCAST.value:
-                    text = "Предпросмотр рассылки:"
-                    inline_markup = broadcast_preview_keyboard()
+                    text = translate("broadcast.preview", locale)
+                    inline_markup = broadcast_preview_keyboard(locale)
                 elif workflow_state == OwnerWorkflowState.CONFIRMING_BROADCAST.value:
                     from app.utils.enums import BroadcastButtonSelection
 
                     buttons = {
-                        BroadcastButtonSelection.NONE.value: "без кнопок",
+                        BroadcastButtonSelection.NONE.value: translate("inline.no_buttons", locale),
                         BroadcastButtonSelection.INSTAGRAM.value: "Instagram",
-                        BroadcastButtonSelection.SITE.value: "официальный сайт",
-                        BroadcastButtonSelection.BOTH.value: "Instagram + сайт",
-                    }.get(draft.button_selection if draft else "none", "без кнопок")
+                        BroadcastButtonSelection.SITE.value: translate("inline.official_site", locale),
+                        BroadcastButtonSelection.BOTH.value: translate("inline.both_buttons", locale),
+                    }.get(draft.button_selection if draft else "none", translate("inline.no_buttons", locale))
                     preview = (draft.content_preview or "Без текста")[:500] if draft else ""
+                    
                     text = (
-                        "Подтвердите массовую отправку.\n\n"
-                        f"Получателей: {draft.recipient_count if draft else 0}\n"
-                        f"Сообщение: {preview}\n"
-                        f"Кнопки: {buttons}\n\n"
-                        "После подтверждения сообщение будет отправлено клиентам."
+                        translate("broadcast.confirm_title", locale) + "\n\n"
+                        f"{translate('broadcast.recipients', locale)}: {draft.recipient_count if draft else 0}\n"
+                        f"{translate('broadcast.message_preview', locale)}: {preview}\n"
+                        f"{translate('broadcast.buttons', locale)}: {buttons}\n\n"
+                        + translate("broadcast.confirm_footer", locale)
                     )
-                    inline_markup = broadcast_confirm_keyboard(draft.id) if draft else None
+                    inline_markup = broadcast_confirm_keyboard(draft.id, locale) if draft else None
                 state_log_name = f"broadcast_{workflow_state}"
             elif workflow_state == "MODEL_SELECTION":
-                text = f"Выберите модель AI\nАктивная модель: {active_model}"
-                inline_markup = model_selection_keyboard(active_model)
+                text = translate("owner.model_selection", locale, model=active_model)
+                inline_markup = model_selection_keyboard(active_model, locale)
                 state_log_name = "model_selection"
             elif selected_ticket_id is not None:
-                text = await self._ticket_chat_text(session, selected_ticket_id)
-                inline_markup = ticket_chat_keyboard(selected_ticket_id)
+                text = await self._ticket_chat_text(session, selected_ticket_id, locale)
+                inline_markup = ticket_chat_keyboard(selected_ticket_id, locale)
                 state_log_name = "supervisor_ticket_reply"
             else:
-                text = f"Панель владельца\nАктивная модель: {active_model}"
+                text = translate("owner.normal_panel", locale, model=active_model)
                 state_log_name = "normal_panel"
 
             reply_markup = self.keyboard_service.get_owner_keyboard(
-                workflow_state, selected_ticket_id
+                workflow_state, selected_ticket_id, locale
             )
 
         elif role == "manager":
@@ -142,15 +146,15 @@ class UIStateService:
             )
 
             if selected_ticket_id is not None:
-                text = await self._ticket_chat_text(session, selected_ticket_id)
-                inline_markup = ticket_chat_keyboard(selected_ticket_id)
+                text = await self._ticket_chat_text(session, selected_ticket_id, locale)
+                inline_markup = ticket_chat_keyboard(selected_ticket_id, locale)
                 state_log_name = "manager_ticket_reply"
             else:
-                text = "Панель менеджера открыта. Выберите действие."
+                text = translate("manager.main_menu", locale)
                 state_log_name = "manager_main_menu"
 
             reply_markup = self.keyboard_service.get_manager_keyboard(
-                selected_ticket_id, notifications_enabled
+                selected_ticket_id, notifications_enabled, locale
             )
 
         else:  # customer
@@ -174,23 +178,21 @@ class UIStateService:
                 await session.flush()
 
             if effective_mode == CustomerMode.REQUESTING_MANAGER.value:
-                text = "Опишите ваш вопрос одним сообщением или приложите фото, видео или документ. Менеджер увидит ваше обращение."
+                text = translate("customer.requesting", locale)
                 state_log_name = "customer_requesting"
             elif active_ticket is not None:
                 if active_ticket.status == TicketStatus.OPEN.value:
-                    text = "У вас уже есть открытое обращение. Ожидаем свободного менеджера. Вы можете отправить дополнительные сообщения или файлы."
+                    text = translate("customer.waiting", locale)
                     state_log_name = "customer_waiting"
                 else:  # CLAIMED
-                    text = "Менеджер уже подключен. Напишите сообщение в этот чат."
+                    text = translate("customer.chatting", locale)
                     state_log_name = "customer_chatting"
             else:
-                text = (
-                    "Здравствуйте! Я AI-ассистент компании. Напишите вопрос или выберите действие."
-                )
+                text = translate("customer.ai_chat_welcome", locale)
                 state_log_name = "customer_ai_chat"
 
             reply_markup = self.keyboard_service.get_customer_keyboard(
-                effective_mode, user.broadcasts_enabled
+                effective_mode, user.broadcasts_enabled, locale
             )
 
         if custom_text is not None:
@@ -214,7 +216,7 @@ class UIStateService:
             )
             if inline_markup:
                 await message.answer(
-                    text="Дополнительные опции:",
+                    text=translate("common.additional_options", locale),
                     reply_markup=inline_markup,
                 )
         elif bot is not None:
@@ -226,7 +228,7 @@ class UIStateService:
             if inline_markup:
                 await bot.send_message(
                     chat_id=user_id,
-                    text="Дополнительные опции:",
+                    text=translate("common.additional_options", locale),
                     reply_markup=inline_markup,
                 )
         else:
@@ -234,23 +236,24 @@ class UIStateService:
                 "No message or bot context provided to send UI refresh to user_id=%s", user_id
             )
 
-    async def _ticket_chat_text(self, session: AsyncSession, ticket_id: int) -> str:
+    async def _ticket_chat_text(self, session: AsyncSession, ticket_id: int, locale: str | None = None) -> str:
         ticket = await self.ticket_service.get_ticket(session, ticket_id=ticket_id)
         messages = await self.ticket_service.get_recent_ticket_messages(
             session, ticket_id=ticket.id, limit=6
         )
         username = f" @{ticket.customer.username}" if ticket.customer.username else ""
-        status = "В работе" if ticket.status == TicketStatus.CLAIMED.value else "Открыто"
+        status = translate("ticket.status_claimed", locale) if ticket.status == TicketStatus.CLAIMED.value else translate("ticket.status_open", locale)
         history = "\n".join(
             f"{message.sender_type}: {message.text_preview or message.content}"
             for message in messages
         )
         if not history:
-            history = "История обращения пока пуста."
-        return (
-            f"Вы отвечаете клиенту по обращению #{ticket.id}. "
-            "Все отправленные сейчас сообщения и файлы будут переданы этому клиенту.\n\n"
-            f"Клиент: {ticket.customer.first_name or ticket.customer.telegram_user_id}{username}\n"
-            f"Статус: {status}\n\n"
-            f"Последние сообщения:\n{history[:2000]}"
+            history = translate("ticket.chat_empty", locale)
+        return translate(
+            "ticket.chat_text",
+            locale,
+            id=ticket.id,
+            client=f"{ticket.customer.first_name or ticket.customer.telegram_user_id}{username}",
+            status=status,
+            history=history[:2000]
         )

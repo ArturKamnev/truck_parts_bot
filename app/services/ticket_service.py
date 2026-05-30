@@ -39,6 +39,7 @@ class TicketService:
         username: str | None,
         first_name: str | None,
         last_name: str | None,
+        language_code: str | None = None,
     ) -> User:
         return await self.upsert_user_from_telegram(
             session,
@@ -46,6 +47,7 @@ class TicketService:
             username=username,
             first_name=first_name,
             last_name=last_name,
+            language_code=language_code,
         )
 
     async def upsert_user_from_telegram(
@@ -56,10 +58,15 @@ class TicketService:
         username: str | None,
         first_name: str | None,
         last_name: str | None,
+        language_code: str | None = None,
     ) -> User:
         stmt = select(User).where(User.telegram_user_id == telegram_user_id)
         user = await session.scalar(stmt)
         now = datetime.now(UTC)
+        
+        from app.i18n.translator import detect_language_code
+        detected_lang = detect_language_code(language_code) if language_code else None
+
         if user is None:
             user = User(
                 telegram_user_id=telegram_user_id,
@@ -68,6 +75,7 @@ class TicketService:
                 last_name=last_name,
                 mode=CustomerMode.AI_CHAT.value,
                 last_seen_at=now,
+                preferred_language=detected_lang,
             )
             session.add(user)
         else:
@@ -75,6 +83,8 @@ class TicketService:
             user.first_name = first_name
             user.last_name = last_name
             user.last_seen_at = now
+            if detected_lang and (not user.preferred_language or not user.preferred_language.strip()):
+                user.preferred_language = detected_lang
         await session.flush()
         return user
 

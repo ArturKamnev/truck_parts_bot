@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -60,6 +61,12 @@ async def telegram_auth(
         first_name=tg_user.get("first_name"),
         last_name=tg_user.get("last_name"),
     )
+    
+    # Auto-detect language preference if not manually selected
+    if not user.preferred_language or not user.preferred_language.strip():
+        from app.i18n.translator import detect_language_code
+        user.preferred_language = detect_language_code(tg_user.get("language_code"))
+
     # Commit change
     await session.commit()
 
@@ -79,6 +86,7 @@ async def telegram_auth(
         last_name=user.last_name,
         broadcasts_enabled=user.broadcasts_enabled,
         miniapp_url=settings.miniapp_url,
+        preferred_language=user.preferred_language,
     )
 
     return TelegramAuthResponse(token=token, profile=profile)
@@ -125,4 +133,29 @@ async def get_me(
         feature_flags=feature_flags,
         broadcasts_enabled=current_user.broadcasts_enabled,
         miniapp_url=settings.miniapp_url,
+        preferred_language=current_user.preferred_language,
     )
+
+
+class LanguageUpdateRequest(BaseModel):
+    language: str = Field(..., description="Language preference code: ru, en, or ky")
+
+
+@router.post("/profile/language", response_model=str)
+async def update_language(
+    req: LanguageUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> str:
+    """
+    Updates the language preference for the current authenticated user.
+    """
+    lang = req.language.strip().lower()
+    if lang not in {"ru", "en", "ky"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid language code. Supported: 'ru', 'en', 'ky'",
+        )
+    current_user.preferred_language = lang
+    await session.commit()
+    return current_user.preferred_language

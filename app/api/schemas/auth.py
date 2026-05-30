@@ -16,6 +16,7 @@ class UserProfileResponse(BaseModel):
     last_name: str | None = Field(None, description="Telegram last name")
     broadcasts_enabled: bool = Field(True, description="Opt-in/out setting for broadcasts")
     miniapp_url: str | None = Field(None, description="Telegram Mini App link/URL")
+    preferred_language: str | None = Field(None, description="Preferred language code")
 
 
 class TelegramAuthResponse(BaseModel):
@@ -35,3 +36,4 @@ class MeResponse(BaseModel):
     feature_flags: dict[str, Any] = Field(default_factory=dict, description="Active feature flags")
     broadcasts_enabled: bool = Field(True, description="Opt-in/out setting for broadcasts")
     miniapp_url: str | None = Field(None, description="Telegram Mini App link/URL")
+    preferred_language: str | None = Field(None, description="Preferred language code")

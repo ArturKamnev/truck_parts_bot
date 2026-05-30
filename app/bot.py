@@ -8,6 +8,7 @@ from aiogram.types import ErrorEvent
 
 from app.config import Settings
 from app.handlers import callbacks, customer, manager, owner
+from app.middlewares.language import LanguageAutoDetectMiddleware
 from app.services.ai_service import AIService
 from app.services.ai_streaming_lock import AIStreamingLockRegistry
 from app.services.authorization_service import AuthorizationService
@@ -53,6 +54,9 @@ def create_bot_and_dispatcher(settings: Settings) -> tuple[Bot, Dispatcher]:
     dp["statistics_service"] = statistics_service
     dp["keyboard_service"] = keyboard_service
     dp["ui_state_service"] = ui_state_service
+
+    dp.message.outer_middleware(LanguageAutoDetectMiddleware())
+    dp.callback_query.outer_middleware(LanguageAutoDetectMiddleware())
 
     dp.include_router(owner.router)
     dp.include_router(callbacks.router)

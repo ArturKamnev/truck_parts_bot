@@ -297,3 +297,39 @@ async def switch_model_callback(
                 message=callback.message,
                 reason="owner_model_switch_error",
             )
+
+
+@router.callback_query(F.data.startswith("lang:set:"))
+async def set_language_callback(
+    callback: CallbackQuery,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if callback.from_user is None or callback.data is None:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 3 or parts[2] not in {"ru", "en", "ky"}:
+        await callback.answer("Некорректное действие", show_alert=True)
+        return
+    lang = parts[2]
+    from app.i18n.translator import translate
+
+    async with SessionLocal() as session, session.begin():
+        user = await ui_state_service.ticket_service.upsert_user_from_telegram(
+            session,
+            telegram_user_id=callback.from_user.id,
+            username=callback.from_user.username,
+            first_name=callback.from_user.first_name,
+            last_name=callback.from_user.last_name,
+        )
+        user.preferred_language = lang
+
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            reason="manual_language_change",
+        )
+    confirmation = translate("bot.language_switched", lang)
+    await callback.answer(confirmation, show_alert=True)
