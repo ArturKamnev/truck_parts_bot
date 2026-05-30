@@ -1,0 +1,88 @@
+export const translations = {
+  // Navigation tabs
+  "nav.chats": "Чаттар",
+  "nav.new_chat": "Жаңы кайрылуу",
+  "nav.ai_helper": "ИИ-Жардамчы",
+  "nav.profile": "Профиль",
+  "nav.new_queue": "Жаңылар",
+  "nav.active_chats": "Активдүү",
+  "nav.closed_chats": "Жабылган",
+  "nav.overview": "Обзор",
+  "nav.managers": "Менеджерлер",
+  "nav.stats": "Статистика",
+  "nav.more": "Дагы",
+
+  // Common UI
+  "common.loading": "Жүктөлүүдө...",
+  "common.error": "Ката",
+  "common.cancel": "Жокко чыгаруу",
+  "common.save": "Сактоо",
+  "common.saving": "Сакталууда...",
+  "common.logout": "Чыгуу",
+  "common.reload": "Тиркемени кайра жүктөө",
+  "common.retry": "Кайра аракет кылуу",
+  "common.telegram_bot": "Telegram ботко өтүү",
+  "common.additional_options": "Кошумча параметрлер",
+
+  // New Chat screen
+  "new_chat.title": "Жаңы кайрылуу",
+  "new_chat.desc": "Сурооңузду же көйгөйүңүздү сүрөттөп жазыңыз. Биринчи бош менеджер сизге жооп берет.",
+  "new_chat.placeholder": "Билдирүү жазыңыз...",
+  "new_chat.submit": "Кайрылууну жөнөтүү",
+  "new_chat.sending": "Жөнөтүлүүдө...",
+
+  // Profile screen
+  "profile.title": "Профиль",
+  "profile.role": "Ролу",
+  "profile.notifications": "Билдирүү жөндөөлөрү",
+  "profile.receive_broadcasts": "Жаңылыктарды алуу",
+  "profile.receive_broadcasts_desc": "Запчастардын келиши жөнүндө маалымат алуу",
+  "profile.stats": "Жеке статистика",
+  "profile.stats_claimed": "Алынган кайрылуулар",
+  "profile.stats_closed": "Жабылган кайрылуулар",
+  "profile.ai_settings": "ИИ моделин жөндөө",
+  "profile.broadcast_history": "Кабарлардын тарыхы",
+  "profile.broadcast_hint": "Жапырт билдирүүлөрдү түзүү Telegram-ботто жеткиликтүү. Жаңы долбоорду баштоо үчүн ботко /broadcast буйругун жөнөтүңүз.",
+  "profile.language": "Язык / Language / Тил",
+
+  // Chat Screen (TicketChatPage)
+  "chat.title": "Кайрылуу #{id}",
+  "chat.status": "Статус",
+  "chat.status_open": "Ачык",
+  "chat.status_claimed": "Жумушта",
+  "chat.status_closed": "Жабык",
+  "chat.client": "Кардар",
+  "chat.manager": "Менеджер",
+  "chat.supervisor": "Супервизор (Көрүү гана)",
+  "chat.placeholder": "Билдирүү жазыңыз...",
+  "chat.send": "Жөнөтүү",
+  "chat.close_ticket": "Кайрылууну жабуу",
+  "chat.claim_ticket": "Жумушка алуу",
+  "chat.history": "Билдирүүлөрдүн тарыхы",
+  "chat.no_messages": "Бул чатта билдирүүлөр жок.",
+
+  // AIChatPage
+  "ai.title": "ИИ-Жардамчы",
+  "ai.desc": "ИИ-ассистентке компания жана автозапчастардын бар экендиги жөнүндө суроо бериңиз.",
+  "ai.placeholder": "Сурооңузду жазыңыз...",
+  "ai.thinking": "ИИ ойлонуп жатат...",
+  "ai.clear_history": "Тарыхты тазалоо",
+
+  // Skeletons / Errors
+  "error.stale_session": "Telegram сессиясы жараксыз. Колдонмону боттон кайра ачыңыз.",
+  "error.restricted_access": "Кирүү чектелген",
+  "error.restricted_access_desc": "Тиркемени Telegram-боттун ичиндеги Mini App баскычы аркылуу ачыңыз.",
+  "error.stale_session_title": "Сессия жараксыз",
+  "error.connection_failure_title": "Туташуу катасы",
+  "error.connection_failure": "Mini App серверине туташуу ишке ашкан жок.",
+  "error.unsupported_role": "Бул ролду интерфейс колдобойт.",
+  "error.unsupported_role_desc": "Базадагы ролуңуз бул Mini App колдогон ролдордон айырмаланат.",
+  "error.critical_title": "Критикалык ката кетти",
+  "error.critical_desc": "Тиркемеде ката кетти. Кайра жүктөп көрүңүз.",
+  "common.retry_auth": "Сессияны баштапкы абалга келтирип, кайра кириңиз",
+  "loading.booting": "Тиркеме даярдалууда...",
+  "loading.waiting_telegram": "Telegram-га туташуу...",
+  "loading.authenticating": "Авторизацияланууда...",
+  "loading.loading_profile": "Профилди жүктөө...",
+};
+

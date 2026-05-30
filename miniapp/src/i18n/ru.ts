@@ -1,0 +1,88 @@
+export const translations = {
+  // Navigation tabs
+  "nav.chats": "Чаты",
+  "nav.new_chat": "Новое обращение",
+  "nav.ai_helper": "ИИ-Помощник",
+  "nav.profile": "Профиль",
+  "nav.new_queue": "Новые",
+  "nav.active_chats": "Активные",
+  "nav.closed_chats": "Закрытые",
+  "nav.overview": "Обзор",
+  "nav.managers": "Менеджеры",
+  "nav.stats": "Статистика",
+  "nav.more": "Еще",
+
+  // Common UI
+  "common.loading": "Загрузка...",
+  "common.error": "Ошибка",
+  "common.cancel": "Отмена",
+  "common.save": "Сохранить",
+  "common.saving": "Сохранение...",
+  "common.logout": "Выйти из аккаунта",
+  "common.reload": "Перезапустить приложение",
+  "common.retry": "Повторить попытку",
+  "common.telegram_bot": "Перейти в Telegram-бот",
+  "common.additional_options": "Дополнительные опции",
+
+  // New Chat screen
+  "new_chat.title": "Новое обращение",
+  "new_chat.desc": "Опишите ваш вопрос или проблему. Первый свободный менеджер ответит вам.",
+  "new_chat.placeholder": "Введите сообщение...",
+  "new_chat.submit": "Отправить обращение",
+  "new_chat.sending": "Отправка...",
+
+  // Profile screen
+  "profile.title": "Профиль",
+  "profile.role": "Роль",
+  "profile.notifications": "Настройки уведомлений",
+  "profile.receive_broadcasts": "Получать рассылки",
+  "profile.receive_broadcasts_desc": "Получайте новости о наличии запчастей",
+  "profile.stats": "Личная статистика",
+  "profile.stats_claimed": "Взято обращений",
+  "profile.stats_closed": "Закрыто обращений",
+  "profile.ai_settings": "Настройки AI модели",
+  "profile.broadcast_history": "История рассылок",
+  "profile.broadcast_hint": "Создание рассылок доступно в Telegram-боте. Отправьте команду /broadcast боту, чтобы начать подготовку новой рассылки.",
+  "profile.language": "Язык / Language / Тил",
+
+  // Chat Screen (TicketChatPage)
+  "chat.title": "Обращение #{id}",
+  "chat.status": "Статус",
+  "chat.status_open": "Открыто",
+  "chat.status_claimed": "В работе",
+  "chat.status_closed": "Закрыто",
+  "chat.client": "Клиент",
+  "chat.manager": "Менеджер",
+  "chat.supervisor": "Супервизор (Просмотр)",
+  "chat.placeholder": "Напишите сообщение...",
+  "chat.send": "Отправить",
+  "chat.close_ticket": "Закрыть обращение",
+  "chat.claim_ticket": "Взять в работу",
+  "chat.history": "История сообщений",
+  "chat.no_messages": "Нет сообщений в этом чате.",
+
+  // AIChatPage
+  "ai.title": "ИИ-Помощник",
+  "ai.desc": "Задайте вопрос AI-ассистенту о компании и наличии автозапчастей.",
+  "ai.placeholder": "Задайте ваш вопрос...",
+  "ai.thinking": "ИИ думает...",
+  "ai.clear_history": "Очистить историю",
+
+  // Skeletons / Errors
+  "error.stale_session": "Telegram-сессия недействительна. Откройте приложение заново из бота.",
+  "error.restricted_access": "Доступ ограничен",
+  "error.restricted_access_desc": "Откройте приложение через кнопку Mini App в Telegram-боте.",
+  "error.stale_session_title": "Сессия недействительна",
+  "error.connection_failure_title": "Ошибка подключения",
+  "error.connection_failure": "Не удалось подключиться к серверу Mini App.",
+  "error.unsupported_role": "Данная роль не поддерживается интерфейсом.",
+  "error.unsupported_role_desc": "Ваша роль в базе данных отличается от поддерживаемых Mini App ролей.",
+  "error.critical_title": "Произошла критическая ошибка",
+  "error.critical_desc": "В работе приложения произошел сбой. Попробуйте перезапустить его.",
+  "common.retry_auth": "Сбросить сессию и войти заново",
+  "loading.booting": "Инициализация приложения...",
+  "loading.waiting_telegram": "Подключение к Telegram...",
+  "loading.authenticating": "Авторизация...",
+  "loading.loading_profile": "Загрузка профиля...",
+};
+

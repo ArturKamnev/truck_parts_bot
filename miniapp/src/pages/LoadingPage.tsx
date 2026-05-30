@@ -1,6 +1,7 @@
 import React from "react";
-import { RotateCcw, Shield, Lock, WifiOff } from "lucide-react";
+import { RotateCcw, Shield, Lock, WifiOff, AlertTriangle } from "lucide-react";
 import { type ApiError } from "../api/client";
+import { t } from "../i18n";
 
 export interface DiagnosticsData {
   apiBaseUrl: string;
@@ -9,11 +10,26 @@ export interface DiagnosticsData {
   platform: string | null;
   initDataLength: number;
   authAttempted: boolean;
-  errorStatus: number | null;
+  errorStatus: number | string | null;
   errorType: string | null;
+  currentRole?: string | null;
+  currentLocale?: string | null;
+  currentRoute?: string;
+  lastErrorSummary?: string | null;
 }
 
 interface LoadingPageProps {
+  authState:
+    | "booting"
+    | "waitingTelegram"
+    | "authenticating"
+    | "loadingProfile"
+    | "ready"
+    | "missingInitData"
+    | "apiUnavailable"
+    | "invalidSession"
+    | "fatalRenderError"
+    | "unsupportedRole";
   error: ApiError | null;
   onRetry: () => void;
   isDev: boolean;
@@ -21,50 +37,95 @@ interface LoadingPageProps {
   diagnostics?: DiagnosticsData | null;
 }
 
+const getActiveLocale = (): string => {
+  try {
+    const cached = localStorage.getItem("tma_user_profile");
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed?.preferred_language) {
+        return parsed.preferred_language;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  
+  if (typeof window !== "undefined") {
+    const tgLang = window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
+    if (tgLang) {
+      const lang = tgLang.toLowerCase().slice(0, 2);
+      if (["ru", "en", "ky"].includes(lang)) return lang;
+      if (lang === "kg") return "ky";
+    }
+  }
+  return "ru";
+};
+
+const sanitizeMessage = (msg: string | undefined | null): string => {
+  if (!msg) return "";
+  // Strip JWTs
+  let clean = msg.replace(/eyJ[a-zA-Z0-9-_=]+\.[a-zA-Z0-9-_=]+\.?[a-zA-Z0-9-_.+/=]*/g, "[REDACTED_JWT]");
+  // Strip initData url parameters
+  clean = clean.replace(/initData=[^&\s]+/g, "initData=[REDACTED]");
+  clean = clean.replace(/query_id=[^&\s]+/g, "query_id=[REDACTED]");
+  clean = clean.replace(/hash=[^&\s]+/g, "hash=[REDACTED]");
+  // Strip authorization header values
+  clean = clean.replace(/Bearer\s+[a-zA-Z0-9-_.]+/g, "Bearer [REDACTED]");
+  return clean;
+};
+
 export const LoadingPage: React.FC<LoadingPageProps> = ({
-  error,
+  authState,
   onRetry,
   isDev,
   onSelectMockRole,
   diagnostics,
 }) => {
-  // Determine precise error state
-  const isMissingInitData =
-    error &&
-    (error.message.includes("кнопку Mini App") ||
-      error.message.includes("через кнопку Mini App") ||
-      (error.status === 403 && !localStorage.getItem("tma_session_token")));
+  const locale = getActiveLocale();
 
-  const isInvalidSession =
-    error &&
-    (error.message.includes("недействительна") ||
-      error.message.includes("Сессия Telegram") ||
-      error.status === 401 ||
-      (error.status === 403 && !!localStorage.getItem("tma_session_token")));
+  // Determine view based on authState
+  const isLoadingState = ["booting", "waitingTelegram", "authenticating", "loadingProfile"].includes(authState);
 
-  const isNetworkError =
-    error &&
-    (error.status === 0 ||
-      error.message.includes("подключиться к серверу") ||
-      (!isMissingInitData && !isInvalidSession));
+  let statusText = t("common.loading", locale);
+  if (authState === "booting") statusText = t("loading.booting", locale);
+  else if (authState === "waitingTelegram") statusText = t("loading.waiting_telegram", locale);
+  else if (authState === "authenticating") statusText = t("loading.authenticating", locale);
+  else if (authState === "loadingProfile") statusText = t("loading.loading_profile", locale);
 
   return (
     <div
-      className="animate-fade-in"
       style={{
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         height: "100%",
+        width: "100%",
         padding: "24px",
         backgroundColor: "hsl(var(--bg-secondary-hsl))",
         color: "hsl(var(--text-primary-hsl))",
+        boxSizing: "border-box",
       }}
     >
-      {error ? (
+      {isLoadingState ? (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}>
+          <div
+            style={{
+              width: "40px",
+              height: "40px",
+              borderRadius: "50%",
+              border: "3px solid hsl(var(--border-hsl))",
+              borderTopColor: "hsl(var(--accent-hsl))",
+              animation: "skeleton-loading 1.2s linear infinite",
+            }}
+          />
+          <div style={{ textAlign: "center" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: 600, color: "#fff" }}>{statusText}</h3>
+          </div>
+        </div>
+      ) : (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "20px" }}>
-          {isMissingInitData && (
+          {authState === "missingInitData" && (
             <>
               <div style={{
                 width: "80px",
@@ -80,16 +141,16 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
               </div>
               <div>
                 <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
-                  Доступ ограничен
+                  {t("error.restricted_access", locale)}
                 </h2>
                 <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
-                  Откройте приложение через кнопку Mini App в Telegram-боте.
+                  {t("error.restricted_access_desc", locale)}
                 </p>
               </div>
             </>
           )}
 
-          {isInvalidSession && (
+          {authState === "invalidSession" && (
             <>
               <div style={{
                 width: "80px",
@@ -105,10 +166,10 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
               </div>
               <div>
                 <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
-                  Сессия недействительна
+                  {t("error.stale_session_title", locale)}
                 </h2>
                 <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
-                  Telegram-сессия недействительна. Откройте приложение заново из бота.
+                  {t("error.stale_session", locale)}
                 </p>
               </div>
               <button
@@ -120,21 +181,21 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
                   padding: "12px 24px",
                   backgroundColor: "hsl(var(--accent-hsl))",
                   color: "#fff",
+                  border: "none",
                   borderRadius: "var(--radius-md)",
                   fontWeight: 600,
                   fontSize: "14px",
+                  cursor: "pointer",
                   boxShadow: "var(--shadow-md)"
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
               >
                 <RotateCcw size={16} />
-                Reload Application
+                {t("common.retry_auth", locale)}
               </button>
             </>
           )}
 
-          {isNetworkError && (
+          {authState === "apiUnavailable" && (
             <>
               <div style={{
                 width: "80px",
@@ -150,16 +211,11 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
               </div>
               <div>
                 <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
-                  Ошибка подключения
+                  {t("error.connection_failure_title", locale)}
                 </h2>
                 <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
-                  Не удалось подключиться к серверу Mini App.
+                  {t("error.connection_failure", locale)}
                 </p>
-                {isDev && (
-                  <p style={{ fontSize: "11px", color: "hsl(var(--warning-hsl))", marginTop: "8px", maxWidth: "280px" }}>
-                    CORS/config error: Check VITE_API_BASE_URL, local server logs, and CORS configurations.
-                  </p>
-                )}
               </div>
               <button
                 onClick={onRetry}
@@ -170,43 +226,114 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
                   padding: "12px 24px",
                   backgroundColor: "hsl(var(--accent-hsl))",
                   color: "#fff",
+                  border: "none",
                   borderRadius: "var(--radius-md)",
                   fontWeight: 600,
                   fontSize: "14px",
+                  cursor: "pointer",
                   boxShadow: "var(--shadow-md)"
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
               >
                 <RotateCcw size={16} />
-                Retry Connection
+                {t("common.retry", locale)}
+              </button>
+            </>
+          )}
+
+          {authState === "unsupportedRole" && (
+            <>
+              <div style={{
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                backgroundColor: "rgba(255, 179, 0, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: "8px"
+              }}>
+                <Shield size={40} style={{ color: "hsl(var(--warning-hsl))" }} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
+                  {t("error.unsupported_role", locale)}
+                </h2>
+                <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
+                  {t("error.unsupported_role_desc", locale)}
+                </p>
+              </div>
+              <button
+                onClick={onRetry}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 24px",
+                  backgroundColor: "hsl(var(--accent-hsl))",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  boxShadow: "var(--shadow-md)"
+                }}
+              >
+                <RotateCcw size={16} />
+                {t("common.retry_auth", locale)}
+              </button>
+            </>
+          )}
+
+          {authState === "fatalRenderError" && (
+            <>
+              <div style={{
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                backgroundColor: "rgba(255, 77, 77, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: "8px"
+              }}>
+                <AlertTriangle size={40} style={{ color: "hsl(var(--danger-hsl))" }} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
+                  {t("error.critical_title", locale)}
+                </h2>
+                <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
+                  {t("error.critical_desc", locale)}
+                </p>
+              </div>
+              <button
+                onClick={onRetry}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 24px",
+                  backgroundColor: "hsl(var(--accent-hsl))",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  cursor: "pointer",
+                  boxShadow: "var(--shadow-md)"
+                }}
+              >
+                <RotateCcw size={16} />
+                {t("common.reload", locale)}
               </button>
             </>
           )}
         </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}>
-          <div
-            style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              border: "3px solid hsl(var(--border-hsl))",
-              borderTopColor: "hsl(var(--accent-hsl))",
-              animation: "skeleton-loading 1.2s linear infinite",
-            }}
-          />
-          <div style={{ textAlign: "center" }}>
-            <h3 style={{ fontSize: "16px", fontWeight: 600 }}>Securing Connection</h3>
-            <p style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))", marginTop: "4px" }}>
-              Authenticating with Telegram secure keys...
-            </p>
-          </div>
-        </div>
       )}
 
-      {/* Diagnostics Panel - Shown ONLY in development */}
-      {isDev && error && diagnostics && (
+      {/* Diagnostics Panel - Collapsible & Safe */}
+      {isDev && diagnostics && (
         <details
           style={{
             marginTop: "24px",
@@ -226,14 +353,20 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
             Diagnostics Info
           </summary>
           <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
-            <div>API Base: {diagnostics.apiBaseUrl}</div>
-            <div>Telegram SDK: {diagnostics.telegramExists ? "Loaded" : "Missing"}</div>
-            <div>WebApp SDK: {diagnostics.webAppExists ? "Available" : "Missing"}</div>
+            <div>API Base: {sanitizeMessage(diagnostics.apiBaseUrl)}</div>
+            <div>Telegram SDK: {diagnostics.telegramExists ? "Yes" : "No"}</div>
+            <div>WebApp SDK: {diagnostics.webAppExists ? "Yes" : "No"}</div>
             <div>Platform: {diagnostics.platform || "N/A"}</div>
             <div>initData Length: {diagnostics.initDataLength}</div>
             <div>Auth Attempted: {diagnostics.authAttempted ? "Yes" : "No"}</div>
             <div>Last Status: {diagnostics.errorStatus !== null ? diagnostics.errorStatus : "None"}</div>
-            <div>Error Type: {diagnostics.errorType || "None"}</div>
+            <div>Error Type: {sanitizeMessage(diagnostics.errorType || "None")}</div>
+            <div>Current Role: {diagnostics.currentRole || "None"}</div>
+            <div>Current Locale: {diagnostics.currentLocale || "None"}</div>
+            <div>Current Route: {diagnostics.currentRoute || "/"}</div>
+            {diagnostics.lastErrorSummary && (
+              <div style={{ color: "#ff7b72" }}>Last Error: {sanitizeMessage(diagnostics.lastErrorSummary)}</div>
+            )}
           </div>
         </details>
       )}
@@ -273,13 +406,14 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
                   flex: 1,
                   padding: "8px 0",
                   backgroundColor: "hsl(var(--border-hsl))",
+                  border: "none",
+                  color: "#fff",
                   borderRadius: "var(--radius-sm)",
                   fontSize: "12px",
                   fontWeight: 600,
                   textTransform: "capitalize",
+                  cursor: "pointer",
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
-                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--border-hsl))")}
               >
                 {role}
               </button>

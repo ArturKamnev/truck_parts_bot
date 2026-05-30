@@ -1,0 +1,88 @@
+export const translations = {
+  // Navigation tabs
+  "nav.chats": "Chats",
+  "nav.new_chat": "New Chat",
+  "nav.ai_helper": "AI Helper",
+  "nav.profile": "Profile",
+  "nav.new_queue": "New Queue",
+  "nav.active_chats": "Active",
+  "nav.closed_chats": "Closed",
+  "nav.overview": "Overview",
+  "nav.managers": "Managers",
+  "nav.stats": "Stats",
+  "nav.more": "More",
+
+  // Common UI
+  "common.loading": "Loading...",
+  "common.error": "Error",
+  "common.cancel": "Cancel",
+  "common.save": "Save",
+  "common.saving": "Saving...",
+  "common.logout": "Log Out",
+  "common.reload": "Reload App",
+  "common.retry": "Retry",
+  "common.telegram_bot": "Go to Telegram Bot",
+  "common.additional_options": "Additional options",
+
+  // New Chat screen
+  "new_chat.title": "New Request",
+  "new_chat.desc": "Describe your question or problem. The first available manager will answer you.",
+  "new_chat.placeholder": "Type your message...",
+  "new_chat.submit": "Submit Request",
+  "new_chat.sending": "Sending...",
+
+  // Profile screen
+  "profile.title": "Profile",
+  "profile.role": "Role",
+  "profile.notifications": "Notification Settings",
+  "profile.receive_broadcasts": "Receive Broadcasts",
+  "profile.receive_broadcasts_desc": "Get news on truck parts availability",
+  "profile.stats": "Personal Stats",
+  "profile.stats_claimed": "Tickets Claimed",
+  "profile.stats_closed": "Tickets Closed",
+  "profile.ai_settings": "AI Model Settings",
+  "profile.broadcast_history": "Broadcast History",
+  "profile.broadcast_hint": "Create broadcasts in the Telegram bot. Send /broadcast command to start a new broadcast draft.",
+  "profile.language": "Language / Язык / Тил",
+
+  // Chat Screen (TicketChatPage)
+  "chat.title": "Ticket #{id}",
+  "chat.status": "Status",
+  "chat.status_open": "Open",
+  "chat.status_claimed": "In Progress",
+  "chat.status_closed": "Closed",
+  "chat.client": "Client",
+  "chat.manager": "Manager",
+  "chat.supervisor": "Supervisor (View Only)",
+  "chat.placeholder": "Type a message...",
+  "chat.send": "Send",
+  "chat.close_ticket": "Close Ticket",
+  "chat.claim_ticket": "Claim Ticket",
+  "chat.history": "Message History",
+  "chat.no_messages": "No messages in this chat.",
+
+  // AIChatPage
+  "ai.title": "AI Assistant",
+  "ai.desc": "Ask the AI assistant about the company and truck parts availability.",
+  "ai.placeholder": "Ask your question...",
+  "ai.thinking": "AI is thinking...",
+  "ai.clear_history": "Clear History",
+
+  // Skeletons / Errors
+  "error.stale_session": "Telegram session is invalid. Open the app again from the bot.",
+  "error.restricted_access": "Access Restricted",
+  "error.restricted_access_desc": "Open the app using the Mini App button inside the Telegram bot.",
+  "error.stale_session_title": "Session Invalid",
+  "error.connection_failure_title": "Connection Error",
+  "error.connection_failure": "Failed to connect to the Mini App server.",
+  "error.unsupported_role": "This role is not supported by the interface.",
+  "error.unsupported_role_desc": "Your database role is different from roles supported by this Mini App.",
+  "error.critical_title": "A critical error occurred",
+  "error.critical_desc": "A critical error occurred. Please try reloading the app.",
+  "common.retry_auth": "Reset session and log in again",
+  "loading.booting": "Initializing application...",
+  "loading.waiting_telegram": "Connecting to Telegram...",
+  "loading.authenticating": "Authenticating...",
+  "loading.loading_profile": "Loading profile...",
+};
+

@@ -5,6 +5,9 @@ import { type UserProfile } from "../api/auth";
 import { clearStoredToken, getStoredToken, setStoredToken, onAuthError, type ApiError } from "../api/client";
 import { createCustomerTicket } from "../api/tickets";
 import { MessageSquare, PlusCircle, Sparkles, User, Inbox, CheckCircle2, Users, BarChart3, MoreHorizontal, Radio, Cpu, ExternalLink } from "lucide-react";
+import { t } from "../i18n";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+
 
 // Import Pages & Shell Components
 import { LoadingPage, type DiagnosticsData } from "../pages/LoadingPage";
@@ -14,9 +17,15 @@ import { ManagerDashboardPage } from "../pages/ManagerDashboardPage";
 import { OwnerDashboardPage } from "../pages/OwnerDashboardPage";
 import { TicketChatPage } from "../pages/TicketChatPage";
 import { AIChatPage } from "../pages/AIChatPage";
+import { SelfTestPage } from "../pages/SelfTestPage";
+
 
 // --- Inline Subcomponents for Navigation ---
-const NewChatView: React.FC<{ onSelectTicket: (id: number) => void; setActiveTab: (tab: string) => void }> = ({ onSelectTicket, setActiveTab }) => {
+const NewChatView: React.FC<{ 
+  onSelectTicket: (id: number) => void; 
+  setActiveTab: (tab: string) => void;
+  locale: string;
+}> = ({ onSelectTicket, setActiveTab, locale }) => {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +41,7 @@ const NewChatView: React.FC<{ onSelectTicket: (id: number) => void; setActiveTab
       setActiveTab("chats");
     } catch (err) {
       const apiErr = err as ApiError;
-      setError(apiErr.message || "Не удалось создать обращение. У вас может быть уже открытое обращение.");
+      setError(apiErr.message || (locale === "ru" ? "Не удалось создать обращение." : "Failed to create request."));
     } finally {
       setSending(false);
     }
@@ -41,9 +50,11 @@ const NewChatView: React.FC<{ onSelectTicket: (id: number) => void; setActiveTab
   return (
     <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "16px", height: "100%", overflowY: "auto" }}>
       <div>
-        <h2 style={{ fontSize: "18px", fontWeight: 800, margin: "0 0 6px 0", color: "#fff" }}>Новое обращение</h2>
+        <h2 style={{ fontSize: "18px", fontWeight: 800, margin: "0 0 6px 0", color: "#fff" }}>
+          {t("new_chat.title", locale)}
+        </h2>
         <p style={{ fontSize: "13px", color: "hsl(var(--text-hint-hsl))", margin: 0 }}>
-          Опишите ваш вопрос или проблему. Первый свободный менеджер ответит вам.
+          {t("new_chat.desc", locale)}
         </p>
       </div>
 
@@ -58,7 +69,7 @@ const NewChatView: React.FC<{ onSelectTicket: (id: number) => void; setActiveTab
           value={text}
           onChange={(e) => setText(e.target.value)}
           disabled={sending}
-          placeholder="Введите сообщение..."
+          placeholder={t("new_chat.placeholder", locale)}
           style={{
             width: "100%",
             height: "150px",
@@ -88,7 +99,7 @@ const NewChatView: React.FC<{ onSelectTicket: (id: number) => void; setActiveTab
             marginTop: "auto",
           }}
         >
-          {sending ? "Отправка..." : "Отправить обращение"}
+          {sending ? t("new_chat.sending", locale) : t("new_chat.submit", locale)}
         </button>
       </form>
     </div>
@@ -111,9 +122,11 @@ const ProfileView: React.FC<{
   isMockActive: boolean;
   setCurrentTab?: (tab: string) => void;
   setProfile?: React.Dispatch<React.SetStateAction<UserProfile | null>>;
-}> = ({ profile, onLogout, isMockActive, setCurrentTab, setProfile }) => {
+  refreshProfile?: () => Promise<void>;
+}> = ({ profile, onLogout, isMockActive, setCurrentTab, setProfile, refreshProfile }) => {
   const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || `User ${profile.telegram_user_id}`;
-  
+  const lang = profile.preferred_language || "ru";
+
   // States for manager
   const [mgrStats, setMgrStats] = useState<{ tickets_claimed: number; tickets_closed: number } | null>(null);
   const [loadingMgrStats, setLoadingMgrStats] = useState(false);
@@ -172,7 +185,7 @@ const ProfileView: React.FC<{
       }
     } catch (e) {
       console.error(e);
-      alert("Не удалось изменить настройки рассылок");
+      alert(t("profile.broadcast_toggle_error", lang) || "Не удалось изменить настройки рассылок");
     } finally {
       setTogglingBroadcasts(false);
     }
@@ -189,6 +202,9 @@ const ProfileView: React.FC<{
           if (next) localStorage.setItem("tma_user_profile", JSON.stringify(next));
           return next;
         });
+      }
+      if (refreshProfile) {
+        await refreshProfile();
       }
     } catch (e) {
       console.error(e);
@@ -266,7 +282,7 @@ const ProfileView: React.FC<{
           <span style={{ fontWeight: 600, color: "#fff" }}>{profile.telegram_user_id}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
-          <span style={{ color: "hsl(var(--text-hint-hsl))" }}>Роль:</span>
+          <span style={{ color: "hsl(var(--text-hint-hsl))" }}>{t("profile.role", lang)}:</span>
           <span style={{ fontWeight: 700, color: "hsl(var(--accent-hsl))", textTransform: "uppercase" }}>{profile.role}</span>
         </div>
         {isMockActive && (
@@ -289,7 +305,7 @@ const ProfileView: React.FC<{
         }}
       >
         <span style={{ color: "hsl(var(--text-hint-hsl))", fontSize: "12px", fontWeight: 700 }}>
-          Language
+          {t("profile.language", lang)}
         </span>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
           {([
@@ -314,7 +330,7 @@ const ProfileView: React.FC<{
                   cursor: savingLanguage ? "wait" : "pointer",
                 }}
               >
-                {label}
+                {savingLanguage && active ? "⏳" : label}
               </button>
             );
           })}
@@ -335,11 +351,15 @@ const ProfileView: React.FC<{
               gap: "12px",
             }}
           >
-            <h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 700, color: "#fff" }}>Настройки уведомлений</h4>
+            <h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 700, color: "#fff" }}>
+              {t("profile.notifications", lang)}
+            </h4>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                <span style={{ fontSize: "13px", color: "#fff" }}>Получать рассылки</span>
-                <span style={{ fontSize: "11px", color: "hsl(var(--text-hint-hsl))" }}>Получайте новости о наличии запчастей</span>
+                <span style={{ fontSize: "13px", color: "#fff" }}>{t("profile.receive_broadcasts", lang)}</span>
+                <span style={{ fontSize: "11px", color: "hsl(var(--text-hint-hsl))" }}>
+                  {t("profile.receive_broadcasts_desc", lang)}
+                </span>
               </div>
               <label className="switch" style={{ position: "relative", display: "inline-block", width: "40px", height: "20px" }}>
                 <input
@@ -395,7 +415,7 @@ const ProfileView: React.FC<{
             }}
           >
             <ExternalLink size={16} />
-            Перейти в Telegram-бот
+            {t("common.telegram_bot", lang)}
           </button>
         </>
       )}
@@ -413,17 +433,23 @@ const ProfileView: React.FC<{
             gap: "12px",
           }}
         >
-          <h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 700, color: "#fff" }}>Личная статистика</h4>
+          <h4 style={{ margin: "0 0 4px 0", fontSize: "14px", fontWeight: 700, color: "#fff" }}>
+            {t("profile.stats", lang)}
+          </h4>
           {loadingMgrStats ? (
             <div className="skeleton" style={{ height: "40px", borderRadius: "4px" }} />
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
               <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "10px", borderRadius: "6px", textAlign: "center", border: "1px solid hsl(var(--border-hsl))" }}>
-                <span style={{ display: "block", fontSize: "11px", color: "hsl(var(--text-hint-hsl))", marginBottom: "4px" }}>Взято обращений</span>
+                <span style={{ display: "block", fontSize: "11px", color: "hsl(var(--text-hint-hsl))", marginBottom: "4px" }}>
+                  {t("profile.stats_claimed", lang)}
+                </span>
                 <span style={{ fontSize: "18px", fontWeight: 700, color: "hsl(var(--accent-hsl))" }}>{mgrStats?.tickets_claimed ?? 0}</span>
               </div>
               <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "10px", borderRadius: "6px", textAlign: "center", border: "1px solid hsl(var(--border-hsl))" }}>
-                <span style={{ display: "block", fontSize: "11px", color: "hsl(var(--text-hint-hsl))", marginBottom: "4px" }}>Закрыто обращений</span>
+                <span style={{ display: "block", fontSize: "11px", color: "hsl(var(--text-hint-hsl))", marginBottom: "4px" }}>
+                  {t("profile.stats_closed", lang)}
+                </span>
                 <span style={{ fontSize: "18px", fontWeight: 700, color: "hsl(var(--success-hsl))" }}>{mgrStats?.tickets_closed ?? 0}</span>
               </div>
             </div>
@@ -454,7 +480,7 @@ const ProfileView: React.FC<{
               }}
             >
               <Users size={16} style={{ color: "hsl(var(--accent-hsl))" }} />
-              Менеджеры
+              {t("nav.managers", lang)}
             </button>
             <button
               onClick={() => setCurrentTab && setCurrentTab("stats")}
@@ -474,7 +500,7 @@ const ProfileView: React.FC<{
               }}
             >
               <BarChart3 size={16} style={{ color: "hsl(var(--success-hsl))" }} />
-              Статистика
+              {t("nav.stats", lang)}
             </button>
           </div>
 
@@ -492,7 +518,9 @@ const ProfileView: React.FC<{
           >
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <Cpu size={16} style={{ color: "hsl(var(--accent-hsl))" }} />
-              <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#fff" }}>Настройки AI модели</h4>
+              <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#fff" }}>
+                {t("profile.ai_settings", lang)}
+              </h4>
             </div>
             
             {loadingOwnerData && !modelInfo ? (
@@ -526,7 +554,7 @@ const ProfileView: React.FC<{
                         style={{ margin: 0 }}
                       />
                       <span style={{ color: isActive ? "#fff" : "hsl(var(--text-hint-hsl))", flex: 1 }}>
-                        {label} {isPending && "(обновление...)"}
+                        {label} {isPending && "..."}
                       </span>
                     </label>
                   );
@@ -551,7 +579,9 @@ const ProfileView: React.FC<{
           >
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <Radio size={16} style={{ color: "hsl(var(--accent-hsl))" }} />
-              <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#fff" }}>История рассылок</h4>
+              <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 700, color: "#fff" }}>
+                {t("profile.broadcast_history", lang)}
+              </h4>
             </div>
 
             <div
@@ -565,7 +595,7 @@ const ProfileView: React.FC<{
                 lineHeight: "1.4",
               }}
             >
-              Создание рассылок доступно в Telegram-боте. Отправьте команду <b>/broadcast</b> боту, чтобы начать подготовку новой рассылки.
+              {t("profile.broadcast_hint", lang)}
             </div>
 
             {loadingOwnerData && broadcasts.length === 0 ? (
@@ -622,7 +652,9 @@ const ProfileView: React.FC<{
                 ))}
               </div>
             ) : (
-              <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>История рассылок пуста</span>
+              <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>
+                {lang === "ru" ? "История рассылок пуста" : lang === "ky" ? "Жөнөтүүлөрдүн тарыхы бош" : "Broadcast history is empty"}
+              </span>
             )}
           </div>
         </>
@@ -643,25 +675,41 @@ const ProfileView: React.FC<{
           marginTop: "12px",
         }}
       >
-        Выйти из аккаунта
+        {t("common.logout", lang)}
       </button>
     </div>
   );
 };
+
+
+type AuthState =
+  | "booting"
+  | "waitingTelegram"
+  | "authenticating"
+  | "loadingProfile"
+  | "ready"
+  | "missingInitData"
+  | "apiUnavailable"
+  | "invalidSession"
+  | "fatalRenderError"
+  | "unsupportedRole";
 
 export const App: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(() => {
     const cached = localStorage.getItem("tma_user_profile");
     if (cached) {
       try {
-        return JSON.parse(cached);
+        const parsed = JSON.parse(cached);
+        if (parsed && ["customer", "manager", "owner", "co_owner"].includes(parsed.role)) {
+          return parsed;
+        }
       } catch (e) {
         localStorage.removeItem("tma_user_profile");
       }
     }
     return null;
   });
-  const [loading, setLoading] = useState(true);
+  const [authState, setAuthState] = useState<AuthState>("booting");
   const [error, setError] = useState<ApiError | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [isMockActive, setIsMockActive] = useState(false);
@@ -680,31 +728,43 @@ export const App: React.FC = () => {
     }
   }, [profile?.role]);
 
-  const isDev = import.meta.env.DEV;
+  const isDev = import.meta.env.DEV || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "true");
+  const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
-  const handleAuthentication = async (initData: string, fromMock = false) => {
-    setDiagnostics(prev => prev ? { ...prev, authAttempted: true } : null);
+  const handleAuthentication = async (initData: string, fromMock = false, currentDiagnostics: DiagnosticsData) => {
+    currentDiagnostics.authAttempted = true;
+    setDiagnostics({ ...currentDiagnostics });
     try {
-      setLoading(true);
       setError(null);
-      
-      // 1. Submit initData to POST /api/auth/telegram to get short-lived session token
       const authData = await authenticateTelegram(initData);
       setStoredToken(authData.token);
       setProfile(authData.profile);
       localStorage.setItem("tma_user_profile", JSON.stringify(authData.profile));
       setIsMockActive(fromMock);
+      
+      currentDiagnostics.currentRole = authData.profile.role;
+      currentDiagnostics.currentLocale = authData.profile.preferred_language;
+      currentDiagnostics.errorStatus = 200;
+      currentDiagnostics.errorType = "OK";
+      setDiagnostics({ ...currentDiagnostics });
+
+      if (["customer", "manager", "owner", "co_owner"].includes(authData.profile.role)) {
+        setAuthState("ready");
+      } else {
+        setAuthState("unsupportedRole");
+      }
     } catch (err) {
       const apiErr = err as ApiError;
-      setDiagnostics(prev => prev ? {
-        ...prev,
-        errorStatus: apiErr.status,
-        errorType: apiErr.message || "Authentication Failed"
-      } : null);
+      currentDiagnostics.errorStatus = apiErr.status;
+      currentDiagnostics.errorType = apiErr.message || "Authentication Failed";
+      setDiagnostics({ ...currentDiagnostics });
 
       let errMsg = "Не удалось подключиться к серверу Mini App.";
       if (apiErr.status === 401 || apiErr.status === 403) {
         errMsg = "Telegram-сессия недействительна. Откройте приложение заново из бота.";
+        setAuthState("invalidSession");
+      } else {
+        setAuthState("apiUnavailable");
       }
 
       setError({
@@ -714,25 +774,38 @@ export const App: React.FC = () => {
       clearStoredToken();
       localStorage.removeItem("tma_user_profile");
       setProfile(null);
-    } finally {
-      setLoading(false);
     }
   };
 
-  const refreshProfile = async () => {
-    const token = getStoredToken();
-    if (!token) return;
+  const refreshProfile = async (token?: string, placeholderProfile?: UserProfile | null, currentDiagnostics?: DiagnosticsData | null) => {
+    const activeToken = token || getStoredToken();
+    if (!activeToken) return;
     try {
       const freshProfile = await getMe();
-      setProfile((prev) => {
-        if (JSON.stringify(prev) !== JSON.stringify(freshProfile)) {
-          localStorage.setItem("tma_user_profile", JSON.stringify(freshProfile));
-          return freshProfile;
-        }
-        return prev;
-      });
+      if (currentDiagnostics) {
+        currentDiagnostics.currentRole = freshProfile.role;
+        currentDiagnostics.currentLocale = freshProfile.preferred_language;
+        setDiagnostics({ ...currentDiagnostics });
+      }
+
+      setProfile(freshProfile);
+      localStorage.setItem("tma_user_profile", JSON.stringify(freshProfile));
+      setIsMockActive(activeToken.includes(".mock_") || !window.Telegram?.WebApp?.initData);
+      setError(null);
+
+      if (["customer", "manager", "owner", "co_owner"].includes(freshProfile.role)) {
+        setAuthState("ready");
+      } else {
+        setAuthState("unsupportedRole");
+      }
     } catch (err) {
       const apiErr = err as ApiError;
+      if (currentDiagnostics) {
+        currentDiagnostics.errorStatus = apiErr.status;
+        currentDiagnostics.errorType = apiErr.message || "Profile fetch failed";
+        setDiagnostics({ ...currentDiagnostics });
+      }
+
       if (apiErr.status === 401 || apiErr.status === 403) {
         clearStoredToken();
         localStorage.removeItem("tma_user_profile");
@@ -741,12 +814,20 @@ export const App: React.FC = () => {
           status: apiErr.status,
           message: "Telegram-сессия недействительна. Откройте приложение заново из бота.",
         });
+        setAuthState("invalidSession");
+      } else {
+        if (!placeholderProfile) {
+          setAuthState("apiUnavailable");
+          setError(apiErr);
+        }
       }
     }
   };
 
   const initializeApp = async (forceFreshAuth = false) => {
     setError(null);
+    setAuthState("booting");
+
     if (forceFreshAuth) {
       clearStoredToken();
       localStorage.removeItem("tma_user_profile");
@@ -754,32 +835,28 @@ export const App: React.FC = () => {
       setIsMockActive(false);
     }
 
-    // Read cached profile to determine if we can bypass full-screen loading
-    const storedToken = forceFreshAuth ? null : getStoredToken();
-    const cachedProfileStr = localStorage.getItem("tma_user_profile");
-    let cachedProfile: UserProfile | null = null;
-    if (cachedProfileStr) {
-      try {
-        cachedProfile = JSON.parse(cachedProfileStr);
-        setProfile(cachedProfile);
-      } catch (e) {
-        localStorage.removeItem("tma_user_profile");
-      }
-    }
-
-    if (storedToken && cachedProfile) {
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-
-    // Wait for Telegram WebApp and initData with mobile-safe backoff.
+    setAuthState("waitingTelegram");
     const { webApp, initData } = await waitForTelegramLaunchContext();
 
     const hasTg = typeof window !== "undefined" && !!window.Telegram;
     const hasWebApp = !!webApp;
     const initDataLen = initData.length;
-    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+
+    const storedToken = forceFreshAuth ? null : getStoredToken();
+    const cachedProfileStr = localStorage.getItem("tma_user_profile");
+    let cachedProfile: UserProfile | null = null;
+    if (cachedProfileStr) {
+      try {
+        const parsed = JSON.parse(cachedProfileStr);
+        if (parsed && ["customer", "manager", "owner", "co_owner"].includes(parsed.role)) {
+          cachedProfile = parsed;
+        } else {
+          localStorage.removeItem("tma_user_profile");
+        }
+      } catch (e) {
+        localStorage.removeItem("tma_user_profile");
+      }
+    }
 
     const currentDiagnostics: DiagnosticsData = {
       apiBaseUrl,
@@ -790,54 +867,35 @@ export const App: React.FC = () => {
       authAttempted: false,
       errorStatus: null,
       errorType: null,
+      currentRoute: window.location.pathname,
+      currentRole: cachedProfile?.role || null,
+      currentLocale: cachedProfile?.preferred_language || null,
     };
     setDiagnostics(currentDiagnostics);
 
     if (initData) {
-      // Always authenticate using initData if available
-      clearStoredToken();
-      await handleAuthentication(initData, false);
+      setAuthState("authenticating");
+      await handleAuthentication(initData, false, currentDiagnostics);
     } else if (storedToken) {
-      // Fetch fresh profile using existing token
-      setDiagnostics(prev => prev ? { ...prev, authAttempted: true } : null);
-      try {
-        const freshProfile = await getMe();
-        setProfile(freshProfile);
-        localStorage.setItem("tma_user_profile", JSON.stringify(freshProfile));
-        setIsMockActive(storedToken.includes(".mock_") || !webApp);
-        setError(null);
-      } catch (err) {
-        clearStoredToken();
-        localStorage.removeItem("tma_user_profile");
-        setProfile(null);
-        const apiErr = err as ApiError;
-        currentDiagnostics.errorStatus = apiErr.status;
-        currentDiagnostics.errorType = apiErr.message || "Session verification failed";
-        setDiagnostics({ ...currentDiagnostics });
-
-        if (isDev) {
-          setError(null);
-        } else {
-          setError({
-            status: apiErr.status || 401,
-            message: "Telegram-сессия недействительна. Откройте приложение заново из бота.",
-          });
-        }
-      } finally {
-        setLoading(false);
+      if (cachedProfile) {
+        setProfile(cachedProfile);
+        setAuthState("ready");
+        refreshProfile(storedToken, cachedProfile, currentDiagnostics);
+      } else {
+        setAuthState("loadingProfile");
+        await refreshProfile(storedToken, null, currentDiagnostics);
       }
     } else {
-      // No initData and no stored token
       localStorage.removeItem("tma_user_profile");
       setProfile(null);
       if (isDev) {
-        setLoading(false);
+        setAuthState("missingInitData");
       } else {
         setError({
           status: 403,
           message: "Откройте приложение через кнопку Mini App в Telegram-боте.",
         });
-        setLoading(false);
+        setAuthState("missingInitData");
       }
     }
   };
@@ -845,7 +903,6 @@ export const App: React.FC = () => {
   useEffect(() => {
     initializeApp();
 
-    // Listen for 401/403 Unauthorized token expirations to log out cleanly
     const unsubscribe = onAuthError(() => {
       setProfile(null);
       setSelectedTicketId(null);
@@ -855,31 +912,62 @@ export const App: React.FC = () => {
         status: 401,
         message: "Telegram-сессия недействительна. Откройте приложение заново из бота.",
       });
+      setAuthState("invalidSession");
     });
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        refreshProfile();
+      if (document.visibilityState === "visible" && authState === "ready") {
+        refreshProfile(undefined, profile, diagnostics);
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
+    const handleGlobalError = (event: ErrorEvent) => {
+      setAuthState("fatalRenderError");
+      setError({
+        status: 500,
+        message: event.message || "Global runtime error",
+      });
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      setAuthState("fatalRenderError");
+      setError({
+        status: 500,
+        message: event.reason?.message || String(event.reason) || "Unhandled promise rejection",
+      });
+    };
+
+    window.addEventListener("error", handleGlobalError);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+
     return () => {
       unsubscribe();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("error", handleGlobalError);
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
     };
   }, []);
 
   useEffect(() => {
-    if (profile) {
-      refreshProfile();
+    if (profile && authState === "ready") {
+      refreshProfile(undefined, profile, diagnostics);
     }
   }, [currentTab]);
 
   const handleSelectMockRole = async (role: "customer" | "manager" | "owner" | "co_owner") => {
     const mockInitData = getMockInitData(role);
-    // Local mock tokens will contain '.mock_' for detection
-    await handleAuthentication(mockInitData, true);
+    const mockDiagnostics = diagnostics || {
+      apiBaseUrl,
+      telegramExists: false,
+      webAppExists: false,
+      platform: "mock",
+      initDataLength: mockInitData.length,
+      authAttempted: false,
+      errorStatus: null,
+      errorType: null,
+    };
+    await handleAuthentication(mockInitData, true, mockDiagnostics);
   };
 
   const handleLogout = () => {
@@ -889,282 +977,324 @@ export const App: React.FC = () => {
     setSelectedTicketId(null);
     setIsMockActive(false);
     setError(null);
-    // Reload to prompt authentication choice or SDK check
-    initializeApp();
+    initializeApp(true);
   };
 
+  const locale = profile?.preferred_language || "ru";
+
+  const isTestMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test") === "true";
+  if (isTestMode) {
+    return <SelfTestPage />;
+  }
+
   // --- Rendering Routing Switcher ---
-  if (loading || !profile) {
+  if (authState !== "ready" || !profile) {
     return (
-      <LoadingPage
-        error={error}
-        onRetry={() => initializeApp(true)}
-        isDev={isDev && !getTelegramWebApp()?.initData}
-        onSelectMockRole={handleSelectMockRole}
-        diagnostics={diagnostics}
-      />
+      <ErrorBoundary
+        role={profile?.role}
+        locale={locale}
+        hasProfile={!!profile}
+        apiBaseUrl={apiBaseUrl}
+      >
+        <LoadingPage
+          authState={authState}
+          error={error}
+          onRetry={() => initializeApp(true)}
+          isDev={isDev}
+          onSelectMockRole={handleSelectMockRole}
+          diagnostics={diagnostics}
+        />
+      </ErrorBoundary>
     );
   }
 
   // Active chat page view
   if (selectedTicketId !== null) {
     return (
-      <TicketChatPage
-        ticketId={selectedTicketId}
-        viewerRole={profile.role}
-        onBack={() => setSelectedTicketId(null)}
-      />
+      <ErrorBoundary
+        role={profile.role}
+        locale={locale}
+        hasProfile={true}
+        apiBaseUrl={apiBaseUrl}
+      >
+        <TicketChatPage
+          ticketId={selectedTicketId}
+          viewerRole={profile.role}
+          onBack={() => setSelectedTicketId(null)}
+        />
+      </ErrorBoundary>
     );
   }
 
   // Main layouts
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
-      <TopBar profile={profile} isMockActive={isMockActive} onLogout={handleLogout} />
-      
-      <main style={{ flex: 1, overflow: "hidden" }}>
-        {profile.role === "customer" && (
-          <>
-            {currentTab === "chats" && <CustomerHomePage onSelectTicket={setSelectedTicketId} />}
-            {currentTab === "new_chat" && <NewChatView onSelectTicket={setSelectedTicketId} setActiveTab={setCurrentTab} />}
-            {currentTab === "ai_helper" && <AIChatPage />}
-            {currentTab === "profile" && (
-              <ProfileView 
-                profile={profile} 
-                onLogout={handleLogout} 
-                isMockActive={isMockActive} 
-                setCurrentTab={setCurrentTab}
-                setProfile={setProfile}
-              />
-            )}
-          </>
-        )}
-        {profile.role === "manager" && (
-          <>
-            {(currentTab === "new" || currentTab === "active" || currentTab === "closed") && (
-              <ManagerDashboardPage 
-                onSelectTicket={setSelectedTicketId} 
-                activeTab={currentTab as any} 
-                setActiveTab={setCurrentTab as any} 
-              />
-            )}
-            {currentTab === "ai_helper" && <AIChatPage />}
-            {currentTab === "profile" && (
-              <ProfileView 
-                profile={profile} 
-                onLogout={handleLogout} 
-                isMockActive={isMockActive} 
-                setCurrentTab={setCurrentTab}
-                setProfile={setProfile}
-              />
-            )}
-          </>
-        )}
-        {(profile.role === "owner" || profile.role === "co_owner") && (
-          <>
-            {(currentTab === "overview" || currentTab === "managers" || currentTab === "stats") && (
-              <OwnerDashboardPage 
-                onSelectTicket={setSelectedTicketId} 
-                activeTab={currentTab === "overview" ? "dashboard" : currentTab as any} 
-                setActiveTab={(tab) => setCurrentTab(tab === "dashboard" ? "overview" : tab)} 
-              />
-            )}
-            {currentTab === "ai_helper" && <AIChatPage />}
-            {currentTab === "more" && (
-              <ProfileView 
-                profile={profile} 
-                onLogout={handleLogout} 
-                isMockActive={isMockActive} 
-                setCurrentTab={setCurrentTab}
-                setProfile={setProfile}
-              />
-            )}
-          </>
-        )}
-      </main>
+    <ErrorBoundary
+      role={profile.role}
+      locale={locale}
+      hasProfile={true}
+      apiBaseUrl={apiBaseUrl}
+    >
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
+        <TopBar profile={profile} isMockActive={isMockActive} onLogout={handleLogout} />
+        
+        <main style={{ flex: 1, overflow: "hidden" }}>
+          {profile.role === "customer" && (
+            <>
+              {currentTab === "chats" && <CustomerHomePage onSelectTicket={setSelectedTicketId} />}
+              {currentTab === "new_chat" && (
+                <NewChatView 
+                  onSelectTicket={setSelectedTicketId} 
+                  setActiveTab={setCurrentTab} 
+                  locale={locale}
+                />
+              )}
+              {currentTab === "ai_helper" && <AIChatPage />}
+              {currentTab === "profile" && (
+                <ProfileView 
+                  profile={profile} 
+                  onLogout={handleLogout} 
+                  isMockActive={isMockActive} 
+                  setCurrentTab={setCurrentTab}
+                  setProfile={setProfile}
+                  refreshProfile={() => refreshProfile()}
+                />
+              )}
+            </>
+          )}
+          {profile.role === "manager" && (
+            <>
+              {(currentTab === "new" || currentTab === "active" || currentTab === "closed") && (
+                <ManagerDashboardPage 
+                  onSelectTicket={setSelectedTicketId} 
+                  activeTab={currentTab as any} 
+                  setActiveTab={setCurrentTab as any} 
+                />
+              )}
+              {currentTab === "ai_helper" && <AIChatPage />}
+              {currentTab === "profile" && (
+                <ProfileView 
+                  profile={profile} 
+                  onLogout={handleLogout} 
+                  isMockActive={isMockActive} 
+                  setCurrentTab={setCurrentTab}
+                  setProfile={setProfile}
+                  refreshProfile={() => refreshProfile()}
+                />
+              )}
+            </>
+          )}
+          {(profile.role === "owner" || profile.role === "co_owner") && (
+            <>
+              {(currentTab === "overview" || currentTab === "managers" || currentTab === "stats") && (
+                <OwnerDashboardPage 
+                  onSelectTicket={setSelectedTicketId} 
+                  activeTab={currentTab === "overview" ? "dashboard" : currentTab as any} 
+                  setActiveTab={(tab) => setCurrentTab(tab === "dashboard" ? "overview" : tab)} 
+                />
+              )}
+              {currentTab === "ai_helper" && <AIChatPage />}
+              {currentTab === "more" && (
+                <ProfileView 
+                  profile={profile} 
+                  onLogout={handleLogout} 
+                  isMockActive={isMockActive} 
+                  setCurrentTab={setCurrentTab}
+                  setProfile={setProfile}
+                  refreshProfile={() => refreshProfile()}
+                />
+              )}
+            </>
+          )}
+          {!["customer", "manager", "owner", "co_owner"].includes(profile.role) && (
+            <div style={{ padding: "20px", color: "red", textAlign: "center" }}>
+              Unsupported role fallback. Please contact administrator.
+            </div>
+          )}
+        </main>
 
-      {/* Bottom Navigation Tabs */}
-      <div
-        style={{
-          display: "flex",
-          backgroundColor: "hsl(var(--card-bg-hsl))",
-          borderTop: "1px solid hsl(var(--border-hsl))",
-          padding: "6px 8px calc(6px + var(--sab))",
-          justifyContent: "space-around",
-          alignItems: "center",
-          zIndex: 10,
-        }}
-      >
-        {profile.role === "customer" && (
-          <>
-            <button
-              onClick={() => setCurrentTab("chats")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "chats" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <MessageSquare size={20} />
-              Chats
-            </button>
-            <button
-              onClick={() => setCurrentTab("new_chat")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "new_chat" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <PlusCircle size={20} />
-              New Chat
-            </button>
-            <button
-              onClick={() => setCurrentTab("ai_helper")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "ai_helper" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <Sparkles size={20} />
-              AI Helper
-            </button>
-            <button
-              onClick={() => setCurrentTab("profile")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "profile" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <User size={20} />
-              Profile
-            </button>
-          </>
-        )}
+        {/* Bottom Navigation Tabs */}
+        <div
+          style={{
+            display: "flex",
+            backgroundColor: "hsl(var(--card-bg-hsl))",
+            borderTop: "1px solid hsl(var(--border-hsl))",
+            padding: "6px 8px calc(6px + var(--sab))",
+            justifyContent: "space-around",
+            alignItems: "center",
+            zIndex: 10,
+          }}
+        >
+          {profile.role === "customer" && (
+            <>
+              <button
+                onClick={() => setCurrentTab("chats")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "chats" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <MessageSquare size={20} />
+                {t("nav.chats", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("new_chat")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "new_chat" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <PlusCircle size={20} />
+                {t("nav.new_chat", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("ai_helper")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "ai_helper" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <Sparkles size={20} />
+                {t("nav.ai_helper", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("profile")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "profile" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <User size={20} />
+                {t("nav.profile", locale)}
+              </button>
+            </>
+          )}
 
-        {profile.role === "manager" && (
-          <>
-            <button
-              onClick={() => setCurrentTab("new")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "new" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <Inbox size={20} />
-              New Queue
-            </button>
-            <button
-              onClick={() => setCurrentTab("active")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "active" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <MessageSquare size={20} />
-              Active Chats
-            </button>
-            <button
-              onClick={() => setCurrentTab("closed")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "closed" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <CheckCircle2 size={20} />
-              Closed Chats
-            </button>
-            <button
-              onClick={() => setCurrentTab("ai_helper")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "ai_helper" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <Sparkles size={20} />
-              AI Helper
-            </button>
-            <button
-              onClick={() => setCurrentTab("profile")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "profile" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <User size={20} />
-              Profile
-            </button>
-          </>
-        )}
+          {profile.role === "manager" && (
+            <>
+              <button
+                onClick={() => setCurrentTab("new")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "new" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <Inbox size={20} />
+                {t("nav.new_queue", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("active")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "active" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <MessageSquare size={20} />
+                {t("nav.active_chats", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("closed")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "closed" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <CheckCircle2 size={20} />
+                {t("nav.closed_chats", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("ai_helper")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "ai_helper" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <Sparkles size={20} />
+                {t("nav.ai_helper", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("profile")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "profile" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <User size={20} />
+                {t("nav.profile", locale)}
+              </button>
+            </>
+          )}
 
-        {(profile.role === "owner" || profile.role === "co_owner") && (
-          <>
-            <button
-              onClick={() => setCurrentTab("overview")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "overview" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <MessageSquare size={20} />
-              Overview
-            </button>
-            <button
-              onClick={() => setCurrentTab("managers")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "managers" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <Users size={20} />
-              Managers
-            </button>
-            <button
-              onClick={() => setCurrentTab("stats")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "stats" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <BarChart3 size={20} />
-              Stats
-            </button>
-            <button
-              onClick={() => setCurrentTab("ai_helper")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "ai_helper" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <Sparkles size={20} />
-              AI Helper
-            </button>
-            <button
-              onClick={() => setCurrentTab("more")}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
-                background: "none", border: "none", color: currentTab === "more" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
-                fontSize: "10px", fontWeight: 600, cursor: "pointer"
-              }}
-            >
-              <MoreHorizontal size={20} />
-              More
-            </button>
-          </>
-        )}
+          {(profile.role === "owner" || profile.role === "co_owner") && (
+            <>
+              <button
+                onClick={() => setCurrentTab("overview")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "overview" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <MessageSquare size={20} />
+                {t("nav.overview", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("managers")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "managers" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <Users size={20} />
+                {t("nav.managers", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("stats")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "stats" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <BarChart3 size={20} />
+                {t("nav.stats", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("ai_helper")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "ai_helper" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <Sparkles size={20} />
+                {t("nav.ai_helper", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("more")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "more" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <MoreHorizontal size={20} />
+                {t("nav.more", locale)}
+              </button>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </ErrorBoundary>
   );
 };
 
