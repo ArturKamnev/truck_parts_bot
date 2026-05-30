@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Annotated
 from urllib.parse import urlparse
 
-from pydantic import Field, ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 AVAILABLE_MODELS = {
@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     broadcast_rate_per_second: int = Field(
         default=20, ge=1, le=30, alias="BROADCAST_RATE_PER_SECOND"
     )
+    miniapp_session_secret: str = Field(
+        default="dev_secret_change_me_in_production", alias="MINIAPP_SESSION_SECRET"
+    )
+    miniapp_auth_max_age_seconds: int = Field(
+        default=86400, alias="MINIAPP_AUTH_MAX_AGE_SECONDS"
+    )
+    miniapp_origin: str = Field(
+        default="http://localhost:5173", alias="MINIAPP_ORIGIN"
+    )
+    miniapp_url: str | None = Field(default=None, alias="MINIAPP_URL")
 
     @field_validator("app_env")
     @classmethod
@@ -108,6 +118,18 @@ class Settings(BaseSettings):
         if parsed.username or parsed.password:
             raise ValueError("Configured broadcast URLs must not contain credentials")
         return stripped
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> Settings:
+        if self.app_env == "production":
+            if (
+                not self.miniapp_session_secret
+                or self.miniapp_session_secret == "dev_secret_change_me_in_production"
+            ):
+                raise ValueError(
+                    "MINIAPP_SESSION_SECRET must be set to a secure, unique value in production environment"
+                )
+        return self
 
     @property
     def manager_id_set(self) -> set[int]:

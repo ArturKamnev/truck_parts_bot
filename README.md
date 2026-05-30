@@ -159,116 +159,47 @@ The bot seeds exactly these OpenRouter models:
 
 The active model is stored in `app_settings`, so owner changes persist across restarts.
 
-## Railway Deployment
+## Railway Multi-Service Deployment
 
-The bot uses long polling. Run exactly one Railway replica/instance for this service so two polling workers do not receive and process the same bot updates.
+The repository is structured to deploy three services from a single monorepo:
+1. **`bot-service`** — Running aiogram long polling (uses [Dockerfile.bot](file:///C:/Users/user/Desktop/telegram_bot/Dockerfile.bot)).
+2. **`api-service`** — Running the FastAPI Mini App backend (uses [Dockerfile.api](file:///C:/Users/user/Desktop/telegram_bot/Dockerfile.api)).
+3. **`miniapp-service`** — Serving the React single-page app (uses [Dockerfile.miniapp](file:///C:/Users/user/Desktop/telegram_bot/Dockerfile.miniapp)).
 
-Railway may provide `DATABASE_URL` as `postgres://...` or `postgresql://...`. The app normalizes both forms to `postgresql+asyncpg://...` at startup and during Alembic migrations, so you can use Railway's `${{Postgres.DATABASE_URL}}` variable directly.
+Please refer to the detailed [Railway Deployment Guide](file:///C:/Users/user/Desktop/telegram_bot/docs/railway_deployment_guide.md) for step-by-step setup, public domain generation, and environment variables list.
 
-Production environment:
-
-```env
-APP_ENV=production
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-OWNER_ID=
-MANAGER_IDS=111,222,333,444,555,666,777,888,999,1000,1001
-```
-
-Railway settings:
-
-- Add a PostgreSQL service.
-- Set the bot service start command to `python -m app.main`.
-- Set the pre-deploy migration command to `python -m alembic upgrade head`.
-- Keep the root `Dockerfile`; it uses Python 3.12 and installs runtime dependencies from `pyproject.toml`.
-- Use a restart policy suitable for a continuously running worker. Do not enable serverless assumptions or sleep-only behavior.
-- Keep replicas at `1`.
-
-Manual Railway variables to fill:
-
-- `BOT_TOKEN`
-- `OPENROUTER_API_KEY`
-- `APP_ENV`
-- `DATABASE_URL`
-- `OWNER_ID`
-- `MANAGER_IDS`
-- `DEFAULT_MODEL`
-- `OPENROUTER_APP_NAME`
-- `OPENROUTER_SITE_URL`
-- `AI_HISTORY_LIMIT`
-- `AI_STREAMING_ENABLED`
-- `AI_STREAM_UPDATE_INTERVAL_SECONDS`
-- `AI_STREAM_MIN_CHARS`
-- `AI_STREAM_USE_TELEGRAM_DRAFT`
-- `LOG_LEVEL`
-- `INSTAGRAM_URL`
-- `OFFICIAL_SITE_URL`
-- `BROADCAST_RATE_PER_SECOND`
-
-Secrets such as bot tokens, OpenRouter keys, Telegram IDs, private URLs, and database URLs belong only in Railway variables or local `.env`. Do not commit them.
-
-## Tests and Lint
-
+### Migrations
+Database migrations are run strictly in one service only. We attach the migrations pre-deploy command to the **`bot-service`**:
 ```bash
-pytest
-ruff check .
+python -m alembic upgrade head
+```
+Do NOT configure migrations or run them on `api-service` or `miniapp-service`.
+
+---
+
+## Technical Auditing & Testing
+
+### Running Tests
+Execute the Python test suite to verify handlers, repositories, and API endpoints:
+```powershell
+.venv\Scripts\pytest
 ```
 
-## Manual Verification
+Execute the TypeScript type check and production builds for the React application:
+```powershell
+cd miniapp
+npm run typecheck
+npm run build
+```
 
-Local SQLite:
+---
 
-1. Set `DATABASE_URL=sqlite+aiosqlite:///./bot.db` in `.env`.
-2. Set `AI_STREAMING_ENABLED=true`.
-3. Run `python -m alembic upgrade head`.
-4. Run `python -m app.main`.
-5. From a customer Telegram account, send a normal text question in AI mode and confirm a
-   partial answer appears quickly.
+## Manual QA Verification
 
-Railway PostgreSQL:
+Before committing a beta release, execute the manual verification checklist located in [Manual QA Checklist](file:///C:/Users/user/Desktop/telegram_bot/docs/manual_qa_checklist.md).
 
-1. Add or update the Railway variables listed above, including the four `AI_STREAM_*`
-   variables.
-2. Keep replicas at `1`.
-3. Run the pre-deploy command `python -m alembic upgrade head`.
-4. Deploy with start command `python -m app.main`.
-5. Ask a normal AI question from a customer account and confirm the active owner-selected
-   OpenRouter model is used.
+It verifies:
+- Interactive manager chat actions and customer Telegram synchronization.
+- Telegram Web App signature validation & production mock auth rejection.
+- UI safe areas, stale sessions (401), offline connections (0), and keyboard stability.
 
-Streaming enabled:
-
-1. Set `AI_STREAMING_ENABLED=true`.
-2. Restart the bot.
-3. Send a longer AI question.
-4. Confirm the temporary/draft response updates before the final answer is complete.
-
-Streaming disabled:
-
-1. Set `AI_STREAMING_ENABLED=false`.
-2. Restart the bot.
-3. Send an AI question.
-4. Confirm the bot waits and then sends one final AI answer, matching the previous behavior.
-
-Simulated OpenRouter streaming failure:
-
-1. Temporarily set an invalid `OPENROUTER_API_KEY`, or monkeypatch
-   `AIService.stream_chat_completion` in a local test run to raise after/before a delta.
-2. If it fails before text, confirm the bot falls back to the non-streaming request.
-3. If it fails after partial text, confirm the bot finalizes with a polite interrupted-answer
-   message.
-
-Two customer accounts:
-
-1. Start two different customer Telegram accounts with the bot.
-2. Send AI questions from both accounts close together.
-3. Confirm both receive separate answers and one customer's partial text never appears in
-   the other customer's chat.
-4. Send a second message from one customer while their first answer is still streaming and
-   confirm the bot replies `Дождитесь окончания текущего ответа.`.
-
-## Deferred Features
-
-- RAG/vector search.
-- Webhooks.
-- Web admin dashboard.
-- Payments.
-- CRM integrations.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, WebAppInfo
+from app.config import get_settings
 
 from app.keyboards.constants import (
     CUSTOMER_ASK_AI,
@@ -43,13 +44,22 @@ class KeyboardService:
             broadcast_btn = (
                 CUSTOMER_BROADCASTS_ON if broadcasts_enabled else CUSTOMER_BROADCASTS_OFF
             )
-            keyboard = [
+            keyboard = []
+            settings = get_settings()
+            if settings.miniapp_url:
+                keyboard.append([
+                    KeyboardButton(
+                        text="💬 Открыть Mini App",
+                        web_app=WebAppInfo(url=settings.miniapp_url)
+                    )
+                ])
+            keyboard.extend([
                 [
                     KeyboardButton(text=CUSTOMER_ASK_AI),
                     KeyboardButton(text=CUSTOMER_CONTACT_MANAGER),
                 ],
                 [KeyboardButton(text=broadcast_btn)],
-            ]
+            ])
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
     def get_manager_keyboard(

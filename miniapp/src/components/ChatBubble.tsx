@@ -1,0 +1,196 @@
+import React from "react";
+import { Image, Volume2, Video, FileText } from "lucide-react";
+import { type TicketMessage } from "../api/tickets";
+
+interface ChatBubbleProps {
+  message: TicketMessage;
+  viewerRole: "customer" | "manager" | "owner";
+  onRetry?: (msg: TicketMessage) => void;
+}
+
+export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onRetry }) => {
+  // Determine alignment
+  // If customer is viewing: customer messages are on the right, manager/system on the left.
+  // If manager/owner is viewing: manager/system are on the right, customer on the left.
+  const isSystem = message.senderType === "system";
+  let isOutgoing = false;
+
+  if (viewerRole === "customer") {
+    isOutgoing = message.senderType === "customer";
+  } else {
+    isOutgoing = message.senderType === "manager" || message.senderType === "owner";
+  }
+
+  const getMediaIcon = (type: string) => {
+    switch (type) {
+      case "photo":
+        return <Image size={16} />;
+      case "voice":
+        return <Volume2 size={16} />;
+      case "video":
+        return <Video size={16} />;
+      default:
+        return <FileText size={16} />;
+    }
+  };
+
+  const formattedTime = new Date(message.createdAt).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (isSystem) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          margin: "8px 0",
+          fontSize: "12px",
+          color: "hsl(var(--text-hint-hsl))",
+        }}
+      >
+        <span
+          style={{
+            backgroundColor: "rgba(112, 132, 153, 0.08)",
+            padding: "4px 10px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid rgba(112, 132, 153, 0.12)",
+          }}
+        >
+          {message.textPreview} • {formattedTime}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: isOutgoing ? "flex-end" : "flex-start",
+        margin: "6px 0",
+        width: "100%",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "75%",
+          borderRadius: "14px",
+          padding: "8px 12px",
+          backgroundColor: isOutgoing ? "hsl(var(--bubble-out-hsl))" : "hsl(var(--bubble-in-hsl))",
+          color: "#fff",
+          borderTopRightRadius: isOutgoing ? "2px" : "14px",
+          borderTopLeftRadius: !isOutgoing ? "2px" : "14px",
+          boxShadow: "var(--shadow-sm)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+        }}
+      >
+        {/* Sender Label for Managers viewing Client messages */}
+        {!isOutgoing && viewerRole !== "customer" && (
+          <span style={{ fontSize: "10px", fontWeight: 600, color: "rgba(255, 255, 255, 0.5)", marginBottom: "2px" }}>
+            CLIENT
+          </span>
+        )}
+        {!isOutgoing && viewerRole === "customer" && (
+          <span style={{ fontSize: "10px", fontWeight: 600, color: "hsl(var(--accent-hsl))", marginBottom: "2px" }}>
+            SUPPORT STAFF
+          </span>
+        )}
+
+        {/* Message Content */}
+        {message.hasMedia ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                padding: "8px",
+                backgroundColor: "rgba(0, 0, 0, 0.15)",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "13px",
+                color: "rgba(255, 255, 255, 0.8)",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {getMediaIcon(message.contentType)}
+                <span style={{ fontWeight: 600, textTransform: "capitalize" }}>
+                  {message.contentType === "photo" ? "Фото" :
+                   message.contentType === "video" ? "Видео" :
+                   message.contentType === "voice" ? "Голосовое сообщение" :
+                   message.contentType === "audio" ? "Аудио" : "Файл/Документ"}
+                </span>
+              </div>
+              <span style={{ fontSize: "11px", opacity: 0.7 }}>
+                Файл доступен в Telegram-чате с ботом.
+              </span>
+            </div>
+            {message.captionPreview && (
+              <span style={{ fontSize: "14px", whiteSpace: "pre-wrap" }}>{message.captionPreview}</span>
+            )}
+          </div>
+        ) : (
+          <span style={{ fontSize: "14px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {message.textPreview}
+          </span>
+        )}
+
+        {/* Timestamp & Delivery status */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            alignSelf: "flex-end",
+            marginTop: "2px",
+          }}
+        >
+          {message.deliveryStatus === "FAILED" && (
+            <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ fontSize: "9px", color: "#ff4d4d", fontWeight: 700, letterSpacing: "0.03em" }}>
+                ОШИБКА ДОСТАВКИ
+              </span>
+              {onRetry && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRetry(message);
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "hsl(var(--accent-hsl))",
+                    fontSize: "9px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    padding: 0,
+                    margin: 0,
+                  }}
+                >
+                  ПОВТОРИТЬ
+                </button>
+              )}
+            </div>
+          )}
+          {message.id < 0 && (
+            <span style={{ fontSize: "9px", opacity: 0.6, fontStyle: "italic" }}>
+              Отправка...
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: "10px",
+              color: "rgba(255, 255, 255, 0.4)",
+            }}
+          >
+            {formattedTime}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};

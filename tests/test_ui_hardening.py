@@ -179,6 +179,44 @@ async def test_customer_stable_keyboard_order() -> None:
     assert kb.keyboard[0][0].text == CUSTOMER_CLOSE_CHAT
 
 
+async def test_customer_keyboard_miniapp_button() -> None:
+    from unittest.mock import patch
+    kb_service = KeyboardService()
+
+    # Test with miniapp_url set
+    with patch("app.services.keyboard_service.get_settings") as mock_get_settings:
+        mock_settings = mock_get_settings.return_value
+        mock_settings.miniapp_url = "https://t.me/my_bot/app"
+
+        # AI_CHAT state should show the button at the top
+        kb = kb_service.get_customer_keyboard(CustomerMode.AI_CHAT.value, broadcasts_enabled=True)
+        assert len(kb.keyboard) == 3
+        assert kb.keyboard[0][0].text == "💬 Открыть Mini App"
+        assert kb.keyboard[0][0].web_app is not None
+        assert kb.keyboard[0][0].web_app.url == "https://t.me/my_bot/app"
+        assert kb.keyboard[1][0].text == CUSTOMER_ASK_AI
+        assert kb.keyboard[1][1].text == CUSTOMER_CONTACT_MANAGER
+        assert kb.keyboard[2][0].text == "🔔 Рассылки: включены"
+
+        # REQUESTING_MANAGER state should NOT show the button
+        kb = kb_service.get_customer_keyboard(CustomerMode.REQUESTING_MANAGER.value, broadcasts_enabled=True)
+        assert len(kb.keyboard) == 1
+        assert kb.keyboard[0][0].text == CUSTOMER_CANCEL
+        assert getattr(kb.keyboard[0][0], "web_app", None) is None
+
+        # WAITING_MANAGER state should NOT show the button
+        kb = kb_service.get_customer_keyboard(CustomerMode.WAITING_MANAGER.value, broadcasts_enabled=True)
+        assert len(kb.keyboard) == 1
+        assert kb.keyboard[0][0].text == CUSTOMER_CANCEL_REQUEST
+        assert getattr(kb.keyboard[0][0], "web_app", None) is None
+
+        # MANAGER_CHAT state should NOT show the button
+        kb = kb_service.get_customer_keyboard(CustomerMode.MANAGER_CHAT.value, broadcasts_enabled=True)
+        assert len(kb.keyboard) == 1
+        assert kb.keyboard[0][0].text == CUSTOMER_CLOSE_CHAT
+        assert getattr(kb.keyboard[0][0], "web_app", None) is None
+
+
 async def test_manager_selected_ticket_mode_keyboard_order() -> None:
     kb_service = KeyboardService()
 

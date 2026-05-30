@@ -86,6 +86,7 @@ def test_production_requires_exactly_11_unique_manager_ids() -> None:
             OWNER_ID=999,
             MANAGER_IDS="101",
             DEFAULT_MODEL=DEFAULT_MODEL,
+            MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
         )
 
     with pytest.raises(ValidationError):
@@ -97,6 +98,7 @@ def test_production_requires_exactly_11_unique_manager_ids() -> None:
             OWNER_ID=999,
             MANAGER_IDS="101,101,102,103,104,105,106,107,108,109,110",
             DEFAULT_MODEL=DEFAULT_MODEL,
+            MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
         )
 
     settings = Settings(
@@ -107,5 +109,6 @@ def test_production_requires_exactly_11_unique_manager_ids() -> None:
         OWNER_ID=999,
         MANAGER_IDS="101,102,103,104,105,106,107,108,109,110,111",
         DEFAULT_MODEL=DEFAULT_MODEL,
+        MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
     )
     assert len(settings.manager_ids) == 11

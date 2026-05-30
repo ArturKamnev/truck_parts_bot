@@ -1,0 +1,41 @@
+:root {
+  /* HSL Tailored Color Palette (Premium Dark Theme) */
+  --tg-theme-bg-color: #17212b; /* Telegram Dark Bg */
+  --tg-theme-secondary-bg-color: #101921; /* Telegram Darker Bg */
+  --tg-theme-text-color: #f5f6f7;
+  --tg-theme-hint-color: #708499;
+  --tg-theme-link-color: #5288c1;
+  --tg-theme-button-color: #5288c1;
+  --tg-theme-button-text-color: #ffffff;
+
+  /* Custom HSL Tokens mapped to TG parameters with fallbacks */
+  --bg-color-hsl: 209, 31%, 13%; /* #141f29 */
+  --bg-secondary-hsl: 209, 35%, 10%; /* #0a1118 */
+  --text-primary-hsl: 210, 10%, 96%;
+  --text-hint-hsl: 210, 15%, 52%;
+  
+  --accent-hsl: 211, 49%, 54%; /* #5288c1 */
+  --accent-hover-hsl: 211, 49%, 45%;
+  --accent-light-hsl: 211, 49%, 18%;
+
+  --border-hsl: 209, 20%, 20%;
+  --card-bg-hsl: 209, 25%, 16%;
+  --bubble-out-hsl: 211, 40%, 25%; /* Manager/Me bubble */
+  --bubble-in-hsl: 209, 25%, 20%; /* Client bubble */
+  
+  --success-hsl: 142, 70%, 45%;
+  --warning-hsl: 38, 92%, 50%;
+  --danger-hsl: 0, 84%, 60%;
+
+  /* Borders & Shadows */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.4);
+
+  /* Safe Area Support */
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sat: env(safe-area-inset-top, 0px);
+}

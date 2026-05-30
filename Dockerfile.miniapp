@@ -1,0 +1,26 @@
+# Stage 1: Build
+FROM node:20-slim AS builder
+
+WORKDIR /app
+
+COPY miniapp/package*.json ./
+RUN npm ci
+
+COPY miniapp/ ./
+
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+RUN npm run build
+
+# Stage 2: Serve
+FROM node:20-slim
+
+WORKDIR /app
+
+RUN npm install -g serve
+
+COPY --from=builder /app/dist ./dist
+
+# Railway injects the PORT env variable. We run serve with SPA routing fallback (-s)
+CMD ["sh", "-c", "serve -s dist -l ${PORT:-3000}"]

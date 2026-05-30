@@ -1,0 +1,130 @@
+@import "./tokens.css";
+
+/* Reset & Box Model */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: hsl(var(--bg-secondary-hsl));
+  color: hsl(var(--text-primary-hsl));
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden; /* Manage scroll internally to prevent full window pull-down */
+  user-select: none;
+}
+
+#root {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border-hsl));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent-hsl));
+}
+
+/* Typography & Interactive elements */
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+a {
+  color: hsl(var(--accent-hsl));
+  text-decoration: none;
+}
+
+/* Animations & Micro-transitions */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 1.8s ease-in-out infinite;
+}
+
+/* Skeletons */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--card-bg-hsl)) 25%,
+    hsl(var(--border-hsl)) 50%,
+    hsl(var(--card-bg-hsl)) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Ticket Card Interactive Styles */
+.ticket-card {
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.ticket-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(82, 136, 193, 0.4) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Chat Composer Styling */
+.composer-input {
+  transition: border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.composer-input:focus {
+  border-color: hsl(var(--accent-hsl)) !important;
+  box-shadow: 0 0 0 2px rgba(82, 136, 193, 0.2);
+}
+
+.composer-send-btn {
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+.composer-send-btn:hover:not(:disabled) {
+  background-color: hsl(var(--accent-hover-hsl)) !important;
+}
+
