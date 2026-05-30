@@ -160,6 +160,17 @@ async def cancel_command(
                     message=message,
                     reason="owner_cancel_model_selection",
                 )
+            elif workflow_state == OwnerWorkflowState.AWAITING_MANAGER_ID.value:
+                if op_session:
+                    op_session.workflow_state = None
+                await message.answer("Назначение менеджера отменено.")
+                await ui.show_current_menu(
+                    active_bot,
+                    session,
+                    user_id,
+                    message=message,
+                    reason="owner_cancel_promote_manager",
+                )
             elif selected_ticket_id is not None:
                 await ts.clear_selected_ticket(session, operator_telegram_id=user_id)
                 await message.answer("Выход из режима ответа.")

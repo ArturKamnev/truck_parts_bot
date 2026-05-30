@@ -112,6 +112,48 @@ async def list_active_tickets(
     ]
 
 
+@router.get("/tickets/closed", response_model=list[TicketResponse], dependencies=[Depends(verify_manager_or_owner_role)])
+async def list_closed_tickets(
+    current_user: User = Depends(get_current_user),
+    session_payload: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+) -> list[TicketResponse]:
+    """
+    Returns closed/cancelled tickets.
+    Managers see only their own closed/cancelled tickets; Owners see all closed/cancelled tickets.
+    """
+    role = session_payload["role"]
+    closed_statuses = (TicketStatus.CLOSED.value, TicketStatus.CANCELLED_BY_CUSTOMER.value)
+    stmt = (
+        select(Ticket)
+        .options(selectinload(Ticket.customer))
+        .where(Ticket.status.in_(closed_statuses))
+    )
+    
+    if role == "manager":
+        stmt = stmt.where(Ticket.assigned_manager_telegram_id == current_user.telegram_user_id)
+        
+    stmt = stmt.order_by(Ticket.closed_at.desc() if Ticket.closed_at is not None else Ticket.created_at.desc())
+    result = await session.scalars(stmt)
+    tickets = result.all()
+    
+    return [
+        TicketResponse(
+            id=ticket.id,
+            customer_id=ticket.customer_id,
+            status=ticket.status,
+            assigned_manager_telegram_id=ticket.assigned_manager_telegram_id,
+            created_at=ticket.created_at,
+            claimed_at=ticket.claimed_at,
+            closed_at=ticket.closed_at,
+            customer_username=ticket.customer.username,
+            customer_first_name=ticket.customer.first_name,
+            customer_last_name=ticket.customer.last_name,
+        )
+        for ticket in tickets
+    ]
+
+
 @router.get("/tickets/{ticket_id}", response_model=TicketResponse, dependencies=[Depends(verify_manager_or_owner_role)])
 async def get_manager_ticket(
     ticket_id: int,
@@ -280,6 +322,7 @@ async def close_manager_ticket(
     ticket_id: int,
     req: CloseTicketRequest,
     current_user: User = Depends(get_current_user),
+    session_payload: dict = Depends(get_current_user_session),
     session: AsyncSession = Depends(get_session),
     bot: Bot = Depends(get_bot),
     ticket_service: TicketService = Depends(get_ticket_service),
@@ -291,8 +334,8 @@ async def close_manager_ticket(
     except Exception:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
 
-    is_owner = authorization_service.is_owner(current_user.telegram_user_id)
-    is_manager = authorization_service.is_manager(current_user.telegram_user_id)
+    is_owner = session_payload["role"] == "owner"
+    is_manager = session_payload["role"] == "manager"
     
     # Enforce owner supervisor intent
     if is_owner and not req.as_supervisor:
@@ -392,6 +435,7 @@ async def send_manager_message(
     ticket_id: int,
     req: MessageCreateRequest,
     current_user: User = Depends(get_current_user),
+    session_payload: dict = Depends(get_current_user_session),
     session: AsyncSession = Depends(get_session),
     bot: Bot = Depends(get_bot),
     relay_service: RelayService = Depends(get_relay_service),
@@ -403,8 +447,8 @@ async def send_manager_message(
     except Exception:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
 
-    is_owner = authorization_service.is_owner(current_user.telegram_user_id)
-    is_manager = authorization_service.is_manager(current_user.telegram_user_id)
+    is_owner = session_payload["role"] == "owner"
+    is_manager = session_payload["role"] == "manager"
 
     # Enforce owner supervisor intent
     if is_owner and not req.as_supervisor:
@@ -497,4 +541,41 @@ async def send_manager_message(
         hasMedia=ticket_message.content_type != "text",
         deliveryStatus=ticket_message.delivery_status,
     )
+
+
+from pydantic import BaseModel
+
+class ManagerStatsResponse(BaseModel):
+    tickets_claimed: int
+    tickets_closed: int
+
+
+@router.get("/stats", response_model=ManagerStatsResponse, dependencies=[Depends(verify_manager_or_owner_role)])
+async def get_manager_stats(
+    session_payload: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+) -> ManagerStatsResponse:
+    """
+    Returns ticket assignment and closed statistics for the current manager.
+    """
+    telegram_user_id = session_payload["telegram_user_id"]
+    from sqlalchemy import func
+    
+    # 1. Total tickets claimed by manager
+    claimed_stmt = select(func.count(Ticket.id)).where(
+        Ticket.assigned_manager_telegram_id == telegram_user_id
+    )
+    tickets_claimed = await session.scalar(claimed_stmt) or 0
+    
+    # 2. Total tickets closed by manager
+    closed_stmt = select(func.count(Ticket.id)).where(
+        Ticket.closed_by_telegram_id == telegram_user_id
+    )
+    tickets_closed = await session.scalar(closed_stmt) or 0
+    
+    return ManagerStatsResponse(
+        tickets_claimed=tickets_claimed,
+        tickets_closed=tickets_closed,
+    )
+
 

@@ -50,6 +50,10 @@ class MessageCreateRequest(BaseModel):
     }
 
 
+class CreateTicketRequest(BaseModel):
+    initialMessage: str = Field(..., min_length=1, max_length=4096)
+
+
 class OwnerStatsResponse(BaseModel):
 
     total_customers: int
@@ -60,3 +64,4 @@ class OwnerStatsResponse(BaseModel):
     claimed_tickets: int
     closed_tickets: int
     avg_first_claim_seconds: float | None
+

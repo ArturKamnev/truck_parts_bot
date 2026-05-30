@@ -4,7 +4,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, health, customer, manager, owner
+from app.api.routes import auth, health, customer, manager, owner, ai
 from app.config import get_settings
 from app.utils.logging import setup_logging
 
@@ -21,18 +21,29 @@ app = FastAPI(
 )
 
 # CORS configurations
-if settings.app_env == "production":
-    # In production, allow ONLY the configured production Mini App origin
-    allow_origins = [settings.miniapp_origin]
-else:
+allow_origins = []
+if settings.miniapp_origin:
+    allow_origins.append(settings.miniapp_origin.rstrip("/"))
+
+if settings.miniapp_url:
+    from urllib.parse import urlparse
+    parsed = urlparse(settings.miniapp_url)
+    if parsed.scheme and parsed.netloc:
+        url_origin = f"{parsed.scheme}://{parsed.netloc}"
+        if url_origin not in allow_origins:
+            allow_origins.append(url_origin)
+
+if settings.app_env != "production":
     # In development, also allow standard local development origins
-    allow_origins = [
-        settings.miniapp_origin,
+    dev_origins = [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ]
+    for o in dev_origins:
+        if o not in allow_origins:
+            allow_origins.append(o)
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,3 +59,4 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(customer.router, prefix="/api")
 app.include_router(manager.router, prefix="/api")
 app.include_router(owner.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")

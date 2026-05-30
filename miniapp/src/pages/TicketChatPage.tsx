@@ -3,7 +3,7 @@ import { ArrowLeft, RefreshCw, AlertTriangle, ShieldCheck } from "lucide-react";
 import { 
   getCustomerTicketDetails, getCustomerTicketMessages, 
   getManagerTicketDetails, getManagerTicketMessages, 
-  claimTicket, closeTicket, sendTicketMessage,
+  claimTicket, closeTicket, sendTicketMessage, sendCustomerMessage,
   type Ticket, type TicketMessage 
 } from "../api/tickets";
 import { ChatBubble } from "../components/ChatBubble";
@@ -182,10 +182,12 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
     }
   };
 
+  const sendingRef = useRef(false);
+
   // Handle sending a message
   const handleSend = async (textToSend?: string) => {
     const content = (textToSend || inputText).trim();
-    if (!content || sending) return;
+    if (!content || sending || sendingRef.current) return;
 
     // Reset input text if we are sending a new message
     if (!textToSend) {
@@ -193,13 +195,14 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
     }
 
     setSending(true);
+    sendingRef.current = true;
 
     // Create optimistic message object
     const tempMsgId = -Date.now();
     const tempMsg: TicketMessage = {
       id: tempMsgId,
       ticketId,
-      senderType: viewerRole === "owner" ? "owner" : "manager",
+      senderType: viewerRole === "customer" ? "customer" : (viewerRole === "owner" ? "owner" : "manager"),
       contentType: "text",
       textPreview: content,
       captionPreview: null,
@@ -211,7 +214,12 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
     setMessages(prev => [...prev, tempMsg]);
 
     try {
-      const persisted = await sendTicketMessage(ticketId, content, asSupervisor);
+      let persisted;
+      if (viewerRole === "customer") {
+        persisted = await sendCustomerMessage(ticketId, content);
+      } else {
+        persisted = await sendTicketMessage(ticketId, content, asSupervisor);
+      }
       // Replace optimistic placeholder with backend-persisted object
       setMessages(prev => prev.map(m => m.id === tempMsgId ? persisted : m));
     } catch (err) {
@@ -219,6 +227,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
       setMessages(prev => prev.map(m => m.id === tempMsgId ? { ...m, deliveryStatus: "FAILED" } : m));
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   };
 
@@ -446,7 +455,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
       </div>
 
       {/* Input Composer / Claim panel */}
-      {viewerRole !== "customer" && ticket && (
+      {ticket && (
         <div
           style={{
             padding: "12px 16px calc(12px + var(--sab))",
@@ -454,11 +463,56 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
             borderTop: "1px solid hsl(var(--border-hsl))",
           }}
         >
-          {ticket.status === "CLOSED" ? (
+          {ticket.status === "CLOSED" || ticket.status === "CANCELLED_BY_CUSTOMER" ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "13px" }}>
               <AlertTriangle size={16} />
               <span>Ticket is closed. Composer disabled.</span>
             </div>
+          ) : viewerRole === "customer" ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSend();
+              }}
+              style={{ display: "flex", gap: "8px", alignItems: "center" }}
+            >
+              <input
+                type="text"
+                className="composer-input"
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                disabled={sending}
+                placeholder="Type your message..."
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: "18px",
+                  backgroundColor: "hsl(var(--bg-secondary-hsl))",
+                  border: "1px solid hsl(var(--border-hsl))",
+                  color: "#fff",
+                  fontSize: "14px",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="submit"
+                className="composer-send-btn"
+                disabled={sending || !inputText.trim()}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: "18px",
+                  backgroundColor: "hsl(var(--accent-hsl))",
+                  color: "#fff",
+                  border: "none",
+                  fontWeight: 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  opacity: sending || !inputText.trim() ? 0.5 : 1,
+                }}
+              >
+                Send
+              </button>
+            </form>
           ) : viewerRole === "owner" && !asSupervisor ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "13px" }}>
               <span>You are in read-only mode. Enable Supervisor Mode above to write.</span>
@@ -526,27 +580,6 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
               </button>
             </form>
           )}
-        </div>
-      )}
-
-      {/* Read-Only Status Bar for Customer */}
-      {viewerRole === "customer" && (
-        <div
-          style={{
-            padding: "12px 16px",
-            backgroundColor: "hsl(var(--card-bg-hsl))",
-            borderTop: "1px solid hsl(var(--border-hsl))",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "8px",
-            fontSize: "13px",
-            color: "hsl(var(--warning-hsl))",
-            paddingBottom: "calc(12px + var(--sab))",
-          }}
-        >
-          <AlertTriangle size={16} />
-          <span>Please use your Telegram bot window to send messages.</span>
         </div>
       )}
 

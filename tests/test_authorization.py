@@ -76,39 +76,30 @@ def test_standard_postgresql_database_url_is_normalized_to_asyncpg() -> None:
     assert settings.database_url == "postgresql+asyncpg://user:pass@host:5432/railway"
 
 
-def test_production_requires_exactly_11_unique_manager_ids() -> None:
-    with pytest.raises(ValidationError):
-        Settings(
-            BOT_TOKEN="123:test",
-            OPENROUTER_API_KEY="sk-test",
-            APP_ENV="production",
-            DATABASE_URL="postgresql+asyncpg://u:p@h:5432/db",
-            OWNER_ID=999,
-            MANAGER_IDS="101",
-            DEFAULT_MODEL=DEFAULT_MODEL,
-            MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
-        )
-
-    with pytest.raises(ValidationError):
-        Settings(
-            BOT_TOKEN="123:test",
-            OPENROUTER_API_KEY="sk-test",
-            APP_ENV="production",
-            DATABASE_URL="postgresql+asyncpg://u:p@h:5432/db",
-            OWNER_ID=999,
-            MANAGER_IDS="101,101,102,103,104,105,106,107,108,109,110",
-            DEFAULT_MODEL=DEFAULT_MODEL,
-            MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
-        )
-
-    settings = Settings(
+def test_production_allows_flexible_manager_count() -> None:
+    # 1. Production allows 1 manager
+    settings_one = Settings(
         BOT_TOKEN="123:test",
         OPENROUTER_API_KEY="sk-test",
         APP_ENV="production",
         DATABASE_URL="postgresql+asyncpg://u:p@h:5432/db",
         OWNER_ID=999,
-        MANAGER_IDS="101,102,103,104,105,106,107,108,109,110,111",
+        MANAGER_IDS="101",
         DEFAULT_MODEL=DEFAULT_MODEL,
         MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
     )
-    assert len(settings.manager_ids) == 11
+    assert settings_one.manager_ids == [101]
+
+    # 2. Production allows empty MANAGER_IDS
+    settings_empty = Settings(
+        BOT_TOKEN="123:test",
+        OPENROUTER_API_KEY="sk-test",
+        APP_ENV="production",
+        DATABASE_URL="postgresql+asyncpg://u:p@h:5432/db",
+        OWNER_ID=999,
+        MANAGER_IDS="",
+        DEFAULT_MODEL=DEFAULT_MODEL,
+        MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
+    )
+    assert settings_empty.manager_ids == []
+

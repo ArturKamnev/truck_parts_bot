@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     app_env: str = Field(default="development", alias="APP_ENV")
     database_url: str = Field(default="sqlite+aiosqlite:///./bot.db", alias="DATABASE_URL")
     owner_id: int = Field(alias="OWNER_ID")
-    manager_ids: Annotated[list[int], NoDecode] = Field(alias="MANAGER_IDS")
+    manager_ids: Annotated[list[int], NoDecode] = Field(default=[], alias="MANAGER_IDS")
     default_model: str = Field(default=DEFAULT_MODEL, alias="DEFAULT_MODEL")
     openrouter_app_name: str = Field(default="Company Support Bot", alias="OPENROUTER_APP_NAME")
     openrouter_site_url: str | None = Field(default=None, alias="OPENROUTER_SITE_URL")
@@ -78,7 +78,9 @@ class Settings(BaseSettings):
 
     @field_validator("manager_ids", mode="before")
     @classmethod
-    def parse_manager_ids(cls, value: str | list[int]) -> list[int]:
+    def parse_manager_ids(cls, value: str | list[int] | None) -> list[int]:
+        if value is None:
+            return []
         if isinstance(value, str):
             return [int(item.strip()) for item in value.split(",") if item.strip()]
         return value
@@ -89,12 +91,6 @@ class Settings(BaseSettings):
         unique_ids = set(value)
         if len(unique_ids) != len(value):
             raise ValueError("MANAGER_IDS must not contain duplicates")
-
-        app_env = info.data.get("app_env", "development")
-        if app_env == "development" and len(value) < 1:
-            raise ValueError("MANAGER_IDS must contain at least one numeric Telegram ID")
-        if app_env == "production" and len(value) != 11:
-            raise ValueError("MANAGER_IDS must contain exactly 11 numeric Telegram IDs")
         return value
 
     @field_validator("default_model")

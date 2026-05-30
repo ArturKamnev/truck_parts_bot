@@ -20,7 +20,7 @@ from app.db.session import get_session
 logger = logging.getLogger(__name__)
 
 
-def validate_telegram_init_data(init_data: str, bot_token: str, max_age: int) -> dict[str, Any] | None:
+def validate_telegram_init_data(init_data: str, bot_token: str, max_age: int, app_env: str = "production") -> dict[str, Any] | None:
     """
     Validates the Telegram Mini App initData query string using the BOT_TOKEN.
     Returns the parsed user dictionary if valid and not expired, otherwise None.
@@ -33,6 +33,13 @@ def validate_telegram_init_data(init_data: str, bot_token: str, max_age: int) ->
             return None
         
         received_hash = parsed.pop("hash")
+
+        # Mock auth check - strictly development only
+        if app_env == "development" and received_hash.startswith("mock_hash_role_"):
+            user_json_str = parsed.get("user")
+            if user_json_str:
+                return json.loads(user_json_str)
+            return None
 
         # Sort the key-value pairs alphabetically and join with newlines
         data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
@@ -84,13 +91,12 @@ def validate_telegram_init_data(init_data: str, bot_token: str, max_age: int) ->
 
 def create_signed_session_token(telegram_user_id: int, role: str, secret: str, max_age: int) -> str:
     """
-    Creates a signed session token containing telegram_user_id, role, iat, and exp.
+    Creates a signed session token containing telegram_user_id, iat, and exp (role is excluded).
     Format: base64(payload).signature
     """
     now = int(time.time())
     payload = {
         "telegram_user_id": telegram_user_id,
-        "role": role,
         "iat": now,
         "exp": now + max_age,
     }
@@ -132,8 +138,8 @@ def verify_signed_session_token(token: str, secret: str) -> dict[str, Any] | Non
         payload_bytes = base64.urlsafe_b64decode(payload_base64.encode("utf-8"))
         payload = json.loads(payload_bytes.decode("utf-8"))
         
-        # Verify payload fields and expiration
-        if not all(k in payload for k in ("telegram_user_id", "role", "iat", "exp")):
+        # Verify payload fields and expiration (role is optional for backward compatibility)
+        if not all(k in payload for k in ("telegram_user_id", "iat", "exp")):
             return None
             
         if payload["exp"] < int(time.time()):
@@ -145,9 +151,16 @@ def verify_signed_session_token(token: str, secret: str) -> dict[str, Any] | Non
         return None
 
 
+def get_authorization_service(settings: Settings = Depends(get_settings)):
+    from app.services.authorization_service import AuthorizationService
+    return AuthorizationService(settings)
+
+
 async def get_current_user_session(
     authorization: str | None = Header(None, alias="Authorization"),
     settings: Settings = Depends(get_settings),
+    session: AsyncSession = Depends(get_session),
+    auth_service = Depends(get_authorization_service),
 ) -> dict[str, Any]:
     """
     Dependency that extracts and verifies the signed session token from Authorization header.
@@ -172,6 +185,11 @@ async def get_current_user_session(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired session token",
         )
+    
+    # Resolve the role dynamically from current DB/settings state!
+    telegram_user_id = payload["telegram_user_id"]
+    role = await auth_service.detect_role_db(telegram_user_id, session)
+    payload["role"] = role
         
     return payload
 
@@ -203,9 +221,6 @@ async def get_bot(settings: Settings = Depends(get_settings)):
         await bot.session.close()
 
 
-def get_authorization_service(settings: Settings = Depends(get_settings)):
-    from app.services.authorization_service import AuthorizationService
-    return AuthorizationService(settings)
 
 
 def get_ticket_service(authorization=Depends(get_authorization_service)):
@@ -238,4 +253,39 @@ def get_ui_state_service(
         ticket_service,
         settings_service,
     )
+
+
+def get_ai_service(
+    settings: Settings = Depends(get_settings),
+    authorization=Depends(get_authorization_service),
+    ticket_service=Depends(get_ticket_service),
+):
+    from app.services.ai_service import AIService
+    from app.services.knowledge_service import KnowledgeService
+    from app.services.settings_service import SettingsService
+    settings_service = SettingsService(settings, authorization)
+    knowledge_service = KnowledgeService()
+    return AIService(settings, settings_service, knowledge_service)
+
+
+def get_settings_service(
+    settings: Settings = Depends(get_settings),
+    authorization=Depends(get_authorization_service),
+):
+    from app.services.settings_service import SettingsService
+    return SettingsService(settings, authorization)
+
+
+def get_broadcast_service(
+    settings: Settings = Depends(get_settings),
+    ticket_service=Depends(get_ticket_service),
+    authorization=Depends(get_authorization_service),
+):
+    from app.services.broadcast_service import BroadcastService
+    from app.services.relay_service import MessageRelayService
+    from app.services.settings_service import SettingsService
+    settings_service = SettingsService(settings, authorization)
+    relay_service = MessageRelayService(settings, ticket_service)
+    return BroadcastService(settings, authorization, relay_service)
+
 

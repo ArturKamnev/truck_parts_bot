@@ -14,6 +14,8 @@ class UserProfileResponse(BaseModel):
     username: str | None = Field(None, description="Telegram username")
     first_name: str | None = Field(None, description="Telegram first name")
     last_name: str | None = Field(None, description="Telegram last name")
+    broadcasts_enabled: bool = Field(True, description="Opt-in/out setting for broadcasts")
+    miniapp_url: str | None = Field(None, description="Telegram Mini App link/URL")
 
 
 class TelegramAuthResponse(BaseModel):
@@ -31,3 +33,5 @@ class MeResponse(BaseModel):
     customer_mode: str | None = Field(None, description="Customer mode if user is customer")
     selected_ticket_id: int | None = Field(None, description="Currently selected ticket ID if manager/owner")
     feature_flags: dict[str, Any] = Field(default_factory=dict, description="Active feature flags")
+    broadcasts_enabled: bool = Field(True, description="Opt-in/out setting for broadcasts")
+    miniapp_url: str | None = Field(None, description="Telegram Mini App link/URL")

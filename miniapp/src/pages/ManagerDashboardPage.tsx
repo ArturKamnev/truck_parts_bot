@@ -1,18 +1,32 @@
 import React, { useEffect, useState } from "react";
-import { Inbox, MessageSquare } from "lucide-react";
-import { getManagerNewTickets, getManagerActiveTickets, claimTicket, type Ticket } from "../api/tickets";
+import { Inbox, MessageSquare, CheckCircle2 } from "lucide-react";
+import { getManagerNewTickets, getManagerActiveTickets, getManagerClosedTickets, claimTicket, type Ticket } from "../api/tickets";
 import { TicketCard } from "../components/TicketCard";
 import { EmptyState } from "../components/EmptyState";
 import { type ApiError } from "../api/client";
 
 interface ManagerDashboardPageProps {
   onSelectTicket: (ticketId: number) => void;
+  activeTab?: TabType;
+  setActiveTab?: (tab: TabType) => void;
 }
 
-type TabType = "new" | "active";
+type TabType = "new" | "active" | "closed";
 
-export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({ onSelectTicket }) => {
-  const [activeTab, setActiveTab] = useState<TabType>("active");
+export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({ 
+  onSelectTicket,
+  activeTab: externalActiveTab,
+  setActiveTab: externalSetActiveTab
+}) => {
+  const [internalActiveTab, setInternalActiveTab] = useState<TabType>("active");
+  const activeTab = externalActiveTab || internalActiveTab;
+  const setActiveTab = (tab: TabType) => {
+    if (externalSetActiveTab) {
+      externalSetActiveTab(tab);
+    } else {
+      setInternalActiveTab(tab);
+    }
+  };
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -24,7 +38,9 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({ onSe
       
       const data = activeTab === "new" 
         ? await getManagerNewTickets() 
-        : await getManagerActiveTickets();
+        : activeTab === "active"
+          ? await getManagerActiveTickets()
+          : await getManagerClosedTickets();
         
       setTickets(data);
     } catch (err) {
@@ -108,6 +124,25 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({ onSe
           <Inbox size={16} />
           New Tickets (Queue)
         </button>
+        <button
+          onClick={() => setActiveTab("closed")}
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+            padding: "8px 0",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "13px",
+            fontWeight: 600,
+            color: activeTab === "closed" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+            backgroundColor: activeTab === "closed" ? "rgba(82, 136, 193, 0.08)" : "transparent",
+          }}
+        >
+          <CheckCircle2 size={16} />
+          Closed Chats
+        </button>
       </div>
 
       {/* Main ticket list view */}
@@ -123,7 +158,7 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({ onSe
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.05em", color: "hsl(var(--text-hint-hsl))" }}>
-            {activeTab === "new" ? "UNCLAIMED OPEN QUEUE" : "MY ASSIGNED TICKETS"} ({tickets.length})
+            {activeTab === "new" ? "UNCLAIMED OPEN QUEUE" : activeTab === "active" ? "MY ASSIGNED TICKETS" : "CLOSED CHATS"} ({tickets.length})
           </span>
           <button
             onClick={fetchTickets}
@@ -152,11 +187,13 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({ onSe
           />
         ) : tickets.length === 0 ? (
           <EmptyState
-            title={activeTab === "new" ? "Queue is empty" : "No active chats"}
+            title={activeTab === "new" ? "Queue is empty" : activeTab === "active" ? "No active chats" : "No closed chats"}
             description={
               activeTab === "new"
                 ? "No customer requests are currently waiting for a manager."
-                : "You don't have any claimed tickets. Switch to the Queue tab to take a support request."
+                : activeTab === "active"
+                  ? "You don't have any claimed tickets. Switch to the Queue tab to take a support request."
+                  : "No closed or cancelled tickets found assigned to you."
             }
           />
         ) : (

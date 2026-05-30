@@ -11,6 +11,7 @@ export interface TelegramWebApp {
   ready(): void;
   expand(): void;
   close(): void;
+  openTelegramLink(url: string): void;
   initData: string;
   initDataUnsafe: {
     query_id?: string;
@@ -37,6 +38,30 @@ export const getTelegramWebApp = (): TelegramWebApp | null => {
     return window.Telegram.WebApp;
   }
   return null;
+};
+
+// Poll and wait for Telegram WebApp to be injected/available
+export const waitForTelegramWebApp = (timeoutMs: number = 1000): Promise<TelegramWebApp | null> => {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      resolve(null);
+      return;
+    }
+    if (window.Telegram?.WebApp) {
+      resolve(window.Telegram.WebApp);
+      return;
+    }
+    const startTime = Date.now();
+    const interval = setInterval(() => {
+      if (window.Telegram?.WebApp) {
+        clearInterval(interval);
+        resolve(window.Telegram.WebApp);
+      } else if (Date.now() - startTime >= timeoutMs) {
+        clearInterval(interval);
+        resolve(null);
+      }
+    }, 50);
+  });
 };
 
 // Generates a local mock initData string based on role for testing in browser outside Telegram

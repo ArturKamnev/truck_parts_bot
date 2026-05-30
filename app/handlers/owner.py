@@ -6,9 +6,10 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.filters import BaseFilter, Command
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy import select, func
 
-from app.config import Settings
-from app.db.models import OperatorSession
+from app.config import Settings, get_settings
+from app.db.models import OperatorSession, StaffMember, User
 from app.db.session import SessionLocal
 from app.filters.roles import IsOwner
 from app.handlers.customer import cancel_command
@@ -20,9 +21,16 @@ from app.keyboards.constants import (
     OWNER_CHOOSE_MODEL,
     OWNER_STATS,
     OWNER_TICKETS,
+    OWNER_MANAGERS,
+    OWNER_PROMOTE_MANAGER,
+    OWNER_MANAGER_STATS,
 )
 from app.keyboards.inline import (
     owner_ticket_keyboard,
+    owner_manager_keyboard,
+    owner_manager_disable_confirm_keyboard,
+    owner_promote_users_keyboard,
+    owner_promote_unknown_confirm_keyboard,
 )
 from app.services.authorization_service import AuthorizationService
 from app.services.broadcast_service import BroadcastService
@@ -33,6 +41,8 @@ from app.utils.enums import (
     BroadcastButtonSelection,
     OwnerWorkflowState,
     TicketStatus,
+    StaffRole,
+    StaffStatus,
 )
 from app.utils.exceptions import AuthorizationError, TicketStateError, UnsupportedRelayContentError
 
@@ -54,6 +64,20 @@ class IsOwnerBroadcasting(BaseFilter):
                 session, owner_telegram_id=message.from_user.id
             )
             return state == OwnerWorkflowState.CREATING_BROADCAST_CONTENT.value
+
+
+class IsOwnerAwaitingManagerId(BaseFilter):
+    async def __call__(
+        self,
+        message: Message,
+        authorization: AuthorizationService,
+    ) -> bool:
+        if message.from_user is None or not authorization.is_owner(message.from_user.id):
+            return False
+        async with SessionLocal() as session:
+            op_session = await session.get(OperatorSession, message.from_user.id)
+            return op_session is not None and op_session.workflow_state == OwnerWorkflowState.AWAITING_MANAGER_ID.value
+
 
 
 @router.message(IsOwner(), Command("admin"))
@@ -703,3 +727,408 @@ def _format_broadcast_history_item(broadcast) -> str:
         f"Ошибок: {broadcast.failed_count}\n"
         f"Недоступны: {broadcast.blocked_count}"
     )
+
+
+# --- MANAGER MANAGEMENT HANDLERS ---
+import datetime
+
+async def _promote_manager_db(telegram_user_id: int, added_by_telegram_id: int) -> None:
+    async with SessionLocal() as session, session.begin():
+        stmt = select(StaffMember).where(StaffMember.telegram_user_id == telegram_user_id)
+        staff = await session.scalar(stmt)
+        if staff:
+            staff.status = StaffStatus.ACTIVE.value
+            staff.role = StaffRole.MANAGER.value
+            staff.added_by_telegram_id = added_by_telegram_id
+            staff.disabled_at = None
+        else:
+            staff = StaffMember(
+                telegram_user_id=telegram_user_id,
+                role=StaffRole.MANAGER.value,
+                status=StaffStatus.ACTIVE.value,
+                added_by_telegram_id=added_by_telegram_id
+            )
+            session.add(staff)
+
+async def _reset_workflow_state(owner_telegram_id: int) -> None:
+    async with SessionLocal() as session, session.begin():
+        op_session = await session.get(OperatorSession, owner_telegram_id)
+        if op_session:
+            op_session.workflow_state = None
+
+@router.message(IsOwner(), F.text == OWNER_MANAGERS, F.chat.type == "private")
+async def owner_managers_text(
+    message: Message,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    user_id = message.from_user.id if message.from_user else message.chat.id
+    
+    async with SessionLocal() as session:
+        stmt = select(StaffMember).order_by(StaffMember.added_at.desc())
+        staff_members = (await session.scalars(stmt)).all()
+        
+        await ui_state_service.show_current_menu(
+            bot, session, user_id, custom_text="Список менеджеров в базе данных:", reason="owner_managers_list"
+        )
+        
+        settings = get_settings()
+        
+        if not staff_members:
+            await message.answer("В базе данных нет менеджеров.")
+            return
+            
+        for staff in staff_members:
+            u_stmt = select(User).where(User.telegram_user_id == staff.telegram_user_id)
+            user = await session.scalar(u_stmt)
+            
+            name = "Неизвестный пользователь"
+            if user:
+                name_parts = []
+                if user.first_name:
+                    name_parts.append(user.first_name)
+                if user.last_name:
+                    name_parts.append(user.last_name)
+                if user.username:
+                    name_parts.append(f"(@{user.username})")
+                if name_parts:
+                    name = " ".join(name_parts)
+            
+            card = (
+                f"👤 {name}\n"
+                f"ID: <code>{staff.telegram_user_id}</code>\n"
+                f"Роль: <b>{staff.role}</b>\n"
+                f"Статус: <b>{staff.status}</b>\n"
+                f"Добавлен: {staff.added_at:%Y-%m-%d %H:%M}"
+            )
+            
+            is_active = (staff.status == StaffStatus.ACTIVE.value)
+            is_root_owner = (staff.telegram_user_id == settings.owner_id)
+            
+            markup = None
+            if not is_root_owner:
+                markup = owner_manager_keyboard(staff.telegram_user_id, is_active=is_active)
+            else:
+                card += "\n👑 <i>Главный владелец (нельзя деактивировать)</i>"
+                
+            await message.answer(card, reply_markup=markup, parse_mode="HTML")
+
+@router.callback_query(IsOwner(), F.data == "owner:managers_list")
+async def owner_managers_list_callback(
+    callback: CallbackQuery,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if callback.from_user is None:
+        return
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    dummy_msg = Message(
+        message_id=callback.message.message_id,
+        date=callback.message.date,
+        chat=callback.message.chat,
+        from_user=callback.from_user,
+    )
+    await owner_managers_text(dummy_msg, bot, ui_state_service)
+    await callback.answer()
+
+@router.message(IsOwner(), F.text == OWNER_PROMOTE_MANAGER, F.chat.type == "private")
+async def owner_promote_manager_text(
+    message: Message,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+        
+    async with SessionLocal() as session, session.begin():
+        op_session = await session.get(OperatorSession, message.from_user.id)
+        if op_session is None:
+            op_session = OperatorSession(operator_telegram_id=message.from_user.id)
+            session.add(op_session)
+        op_session.workflow_state = OwnerWorkflowState.AWAITING_MANAGER_ID.value
+        
+    async with SessionLocal() as session:
+        settings = get_settings()
+        stmt = select(User).where(
+            User.telegram_user_id != settings.owner_id
+        ).order_by(User.last_seen_at.desc()).limit(10)
+        recent_users = (await session.scalars(stmt)).all()
+        
+        inline_users = []
+        for u in recent_users:
+            s_stmt = select(StaffMember).where(
+                StaffMember.telegram_user_id == u.telegram_user_id
+            )
+            staff = await session.scalar(s_stmt)
+            if not staff or staff.status != StaffStatus.ACTIVE.value:
+                name_parts = []
+                if u.first_name:
+                    name_parts.append(u.first_name)
+                if u.last_name:
+                    name_parts.append(u.last_name)
+                if u.username:
+                    name_parts.append(f"(@{u.username})")
+                name = " ".join(name_parts).strip() or f"User {u.telegram_user_id}"
+                inline_users.append((u.telegram_user_id, name))
+                
+        markup = owner_promote_users_keyboard(inline_users[:5])
+        
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id,
+            custom_text="Введите числовой Telegram ID пользователя для назначения менеджером, или выберите из списка ниже:",
+            reason="owner_promote_prompt"
+        )
+        await message.answer("Список последних активных пользователей:", reply_markup=markup)
+
+@router.message(IsOwnerAwaitingManagerId(), F.chat.type == "private")
+async def owner_capture_manager_id(
+    message: Message,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+        
+    text = message.text.strip() if message.text else ""
+    if text in {OWNER_CANCEL, OWNER_BACK} or text.startswith("/"):
+        return
+        
+    if not text.isdigit():
+        await message.answer("⚠️ Некорректный ID. Пожалуйста, отправьте числовой Telegram ID (например, 123456789) или нажмите Отмена.")
+        return
+        
+    telegram_user_id = int(text)
+    settings = get_settings()
+    
+    if telegram_user_id == settings.owner_id:
+        await message.answer("⚠️ Вы не можете назначить владельца менеджером.")
+        return
+        
+    async with SessionLocal() as session:
+        u_stmt = select(User).where(User.telegram_user_id == telegram_user_id)
+        user = await session.scalar(u_stmt)
+        
+        if not user:
+            markup = owner_promote_unknown_confirm_keyboard(telegram_user_id)
+            await message.answer(
+                f"⚠️ Пользователь с ID <code>{telegram_user_id}</code> не найден в базе данных (он никогда не запускал этого бота).\n\n"
+                "Вы уверены, что хотите назначить его менеджером?",
+                reply_markup=markup,
+                parse_mode="HTML"
+            )
+            return
+            
+        await _promote_manager_db(telegram_user_id, message.from_user.id)
+        await _reset_workflow_state(message.from_user.id)
+        
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id,
+            custom_text=f"✅ Пользователь {user.first_name or telegram_user_id} назначен менеджером.",
+            reason="owner_promoted_manager"
+        )
+
+@router.callback_query(IsOwner(), F.data.startswith("owner:manager:disable_prompt:"))
+async def owner_manager_disable_prompt_callback(
+    callback: CallbackQuery,
+) -> None:
+    if callback.from_user is None or callback.data is None:
+        return
+    
+    target_id = int(callback.data.split(":")[-1])
+    settings = get_settings()
+    if target_id == settings.owner_id:
+        await callback.answer("⚠️ Вы не можете деактивировать главного владельца.", show_alert=True)
+        return
+        
+    markup = owner_manager_disable_confirm_keyboard(target_id)
+    await callback.message.edit_reply_markup(reply_markup=markup)
+    await callback.answer()
+
+@router.callback_query(IsOwner(), F.data.startswith("owner:manager:disable_confirm:"))
+async def owner_manager_disable_confirm_callback(
+    callback: CallbackQuery,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if callback.from_user is None or callback.data is None:
+        return
+        
+    target_id = int(callback.data.split(":")[-1])
+    settings = get_settings()
+    if target_id == settings.owner_id:
+        await callback.answer("⚠️ Вы не можете деактивировать главного владельца.", show_alert=True)
+        return
+        
+    async with SessionLocal() as session, session.begin():
+        stmt = select(StaffMember).where(StaffMember.telegram_user_id == target_id)
+        staff = await session.scalar(stmt)
+        if staff:
+            staff.status = StaffStatus.DISABLED.value
+            staff.disabled_at = datetime.datetime.now(datetime.UTC)
+            
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    
+    dummy_msg = Message(
+        message_id=callback.message.message_id,
+        date=callback.message.date,
+        chat=callback.message.chat,
+        from_user=callback.from_user,
+    )
+    await owner_managers_text(dummy_msg, bot, ui_state_service)
+    await callback.answer("Менеджер деактивирован.")
+
+@router.callback_query(IsOwner(), F.data.startswith("owner:manager:enable:"))
+async def owner_manager_enable_callback(
+    callback: CallbackQuery,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if callback.from_user is None or callback.data is None:
+        return
+        
+    target_id = int(callback.data.split(":")[-1])
+    
+    async with SessionLocal() as session, session.begin():
+        stmt = select(StaffMember).where(StaffMember.telegram_user_id == target_id)
+        staff = await session.scalar(stmt)
+        if staff:
+            staff.status = StaffStatus.ACTIVE.value
+            staff.role = StaffRole.MANAGER.value
+            staff.disabled_at = None
+            
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+        
+    dummy_msg = Message(
+        message_id=callback.message.message_id,
+        date=callback.message.date,
+        chat=callback.message.chat,
+        from_user=callback.from_user,
+    )
+    await owner_managers_text(dummy_msg, bot, ui_state_service)
+    await callback.answer("Менеджер активирован.")
+
+@router.callback_query(IsOwner(), F.data.startswith("owner:promote_user:"))
+async def owner_promote_user_callback(
+    callback: CallbackQuery,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if callback.from_user is None or callback.data is None:
+        return
+        
+    target_id = int(callback.data.split(":")[-1])
+    settings = get_settings()
+    if target_id == settings.owner_id:
+        await callback.answer("⚠️ Вы не можете назначить владельца менеджером.", show_alert=True)
+        return
+        
+    await _promote_manager_db(target_id, callback.from_user.id)
+    await _reset_workflow_state(callback.from_user.id)
+    
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+        
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id,
+            custom_text=f"✅ Пользователь с ID {target_id} назначен менеджером.",
+            reason="owner_promoted_manager_callback"
+        )
+    await callback.answer()
+
+@router.callback_query(IsOwner(), F.data.startswith("owner:promote_unknown_confirm:"))
+async def owner_promote_unknown_confirm_callback(
+    callback: CallbackQuery,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if callback.from_user is None or callback.data is None:
+        return
+        
+    target_id = int(callback.data.split(":")[-1])
+    settings = get_settings()
+    if target_id == settings.owner_id:
+        await callback.answer("⚠️ Вы не можете назначить владельца менеджером.", show_alert=True)
+        return
+        
+    await _promote_manager_db(target_id, callback.from_user.id)
+    await _reset_workflow_state(callback.from_user.id)
+    
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+        
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id,
+            custom_text=f"✅ Пользователь с ID {target_id} назначен менеджером.",
+            reason="owner_promoted_manager_unknown_callback"
+        )
+    await callback.answer()
+
+@router.message(IsOwner(), F.text == OWNER_MANAGER_STATS, F.chat.type == "private")
+async def owner_manager_stats_text(
+    message: Message,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+        
+    async with SessionLocal() as session:
+        stmt = select(StaffMember).order_by(StaffMember.added_at.desc())
+        staff_members = (await session.scalars(stmt)).all()
+        
+        if not staff_members:
+            await ui_state_service.show_current_menu(
+                bot, session, message.from_user.id,
+                custom_text="В базе данных нет менеджеров для вывода статистики.",
+                reason="owner_manager_stats_empty"
+            )
+            return
+            
+        stats_text = "📊 Статистика по менеджерам:\n\n"
+        
+        from app.db.models import Ticket
+        
+        for staff in staff_members:
+            claimed_stmt = select(func.count(Ticket.id)).where(
+                Ticket.assigned_manager_telegram_id == staff.telegram_user_id,
+                Ticket.status == TicketStatus.CLAIMED.value
+            )
+            claimed_count = await session.scalar(claimed_stmt) or 0
+            
+            closed_stmt = select(func.count(Ticket.id)).where(
+                Ticket.assigned_manager_telegram_id == staff.telegram_user_id,
+                Ticket.status == TicketStatus.CLOSED.value
+            )
+            closed_count = await session.scalar(closed_stmt) or 0
+            
+            u_stmt = select(User).where(User.telegram_user_id == staff.telegram_user_id)
+            user = await session.scalar(u_stmt)
+            name = user.first_name or f"ID {staff.telegram_user_id}" if user else f"ID {staff.telegram_user_id}"
+            
+            stats_text += (
+                f"👤 <b>{name}</b> (<code>{staff.telegram_user_id}</code>)\n"
+                f"   Статус: {staff.status}\n"
+                f"   В работе: {claimed_count}\n"
+                f"   Закрыто: {closed_count}\n\n"
+            )
+            
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id,
+            custom_text=stats_text,
+            reason="owner_manager_stats"
+        )

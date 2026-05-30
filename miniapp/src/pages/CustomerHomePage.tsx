@@ -43,7 +43,7 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
         height: "100%",
       }}
     >
-      {/* Fallback & Information Banner */}
+      {/* Welcome & Information Banner */}
       <div
         style={{
           backgroundColor: "hsl(var(--card-bg-hsl))",
@@ -71,15 +71,15 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
             <Bot size={18} />
           </div>
           <div>
-            <h4 style={{ fontSize: "14px", fontWeight: 700 }}>AI Support & Fallback</h4>
+            <h4 style={{ fontSize: "14px", fontWeight: 700 }}>Центр поддержки</h4>
             <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>
-              Bot chat remains available 24/7
+              История обращений и ИИ-ассистент
             </span>
           </div>
         </div>
         
-        <p style={{ fontSize: "13px", color: "hsl(var(--text-hint-hsl))", lineHeight: "1.4" }}>
-          You are currently in the read-only dashboard. The AI support bot will stream replies to you directly in the Telegram chat window.
+        <p style={{ fontSize: "13px", color: "hsl(var(--text-hint-hsl))", lineHeight: "1.4", margin: 0 }}>
+          Здесь вы можете просматривать историю ваших обращений и переписываться с менеджерами поддержки. Для быстрых ответов используйте вкладку AI Helper.
         </p>
 
         <a
@@ -98,11 +98,12 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
             borderRadius: "var(--radius-sm)",
             fontSize: "13px",
             fontWeight: 600,
+            textDecoration: "none",
           }}
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
         >
-          <span>Open Telegram Chat Bot</span>
+          <span>Открыть бот в Telegram</span>
           <ExternalLink size={14} />
         </a>
       </div>

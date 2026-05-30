@@ -26,6 +26,9 @@ from app.keyboards.constants import (
     OWNER_CHOOSE_MODEL,
     OWNER_STATS,
     OWNER_TICKETS,
+    OWNER_MANAGERS,
+    OWNER_PROMOTE_MANAGER,
+    OWNER_MANAGER_STATS,
 )
 from app.utils.enums import CustomerMode, OwnerWorkflowState
 
@@ -94,6 +97,7 @@ class KeyboardService:
                 OwnerWorkflowState.CHOOSING_BROADCAST_BUTTONS.value,
                 OwnerWorkflowState.PREVIEWING_BROADCAST.value,
                 OwnerWorkflowState.CONFIRMING_BROADCAST.value,
+                OwnerWorkflowState.AWAITING_MANAGER_ID.value,
                 "MODEL_SELECTION",
             }
             or selected_ticket_id is not None
@@ -108,5 +112,10 @@ class KeyboardService:
                     KeyboardButton(text=OWNER_BROADCAST),
                     KeyboardButton(text=OWNER_BROADCAST_HISTORY),
                 ],
+                [
+                    KeyboardButton(text=OWNER_MANAGERS),
+                    KeyboardButton(text=OWNER_PROMOTE_MANAGER),
+                ],
+                [KeyboardButton(text=OWNER_MANAGER_STATS)],
             ]
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)

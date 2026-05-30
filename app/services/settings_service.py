@@ -34,7 +34,23 @@ class SettingsService:
                     updated_by_telegram_id=None,
                 )
             )
-            await session.flush()
+        
+        # Seed manager IDs into StaffMember table if they do not exist
+        from app.db.models import StaffMember
+        from app.utils.enums import StaffRole, StaffStatus
+        for manager_id in self._settings.manager_ids:
+            stmt = select(StaffMember).where(StaffMember.telegram_user_id == manager_id)
+            existing_staff = await session.scalar(stmt)
+            if existing_staff is None:
+                session.add(
+                    StaffMember(
+                        telegram_user_id=manager_id,
+                        role=StaffRole.MANAGER.value,
+                        status=StaffStatus.ACTIVE.value,
+                        notes="Seeded from configuration MANAGER_IDS"
+                    )
+                )
+        await session.flush()
 
     async def switch_active_model(
         self, session: AsyncSession, *, actor_telegram_id: int, model_id: str

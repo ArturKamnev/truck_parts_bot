@@ -7,6 +7,8 @@ export interface UserProfile {
   first_name: string | null;
   last_name: string | null;
   display_name: string;
+  broadcasts_enabled: boolean;
+  miniapp_url: string | null;
   customer_mode?: "AI_CHAT" | "WAITING_MANAGER" | "MANAGER_CHAT" | string;
   selected_ticket_id: number | null;
   feature_flags: {

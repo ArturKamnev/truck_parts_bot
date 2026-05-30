@@ -200,3 +200,75 @@ def broadcast_report_keyboard(broadcast_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def owner_manager_keyboard(telegram_user_id: int, is_active: bool) -> InlineKeyboardMarkup:
+    rows = []
+    if is_active:
+        rows.append([
+            InlineKeyboardButton(
+                text="❌ Деактивировать",
+                callback_data=f"owner:manager:disable_prompt:{telegram_user_id}"
+            )
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton(
+                text="✅ Активировать",
+                callback_data=f"owner:manager:enable:{telegram_user_id}"
+            )
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def owner_manager_disable_confirm_keyboard(telegram_user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Да, деактивировать",
+                    callback_data=f"owner:manager:disable_confirm:{telegram_user_id}"
+                ),
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data="owner:managers_list"
+                )
+            ]
+        ]
+    )
+
+
+def owner_promote_users_keyboard(users: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    rows = []
+    for user_id, display_name in users:
+        rows.append([
+            InlineKeyboardButton(
+                text=f"👤 {display_name}",
+                callback_data=f"owner:promote_user:{user_id}"
+            )
+        ])
+    rows.append([
+        InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data="owner:panel"
+        )
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def owner_promote_unknown_confirm_keyboard(telegram_user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Да, назначить",
+                    callback_data=f"owner:promote_unknown_confirm:{telegram_user_id}"
+                ),
+                InlineKeyboardButton(
+                    text="Отмена",
+                    callback_data="owner:panel"
+                )
+            ]
+        ]
+    )
+

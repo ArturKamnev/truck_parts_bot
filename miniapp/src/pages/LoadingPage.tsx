@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertCircle, RotateCcw, Shield, Lock, WifiOff } from "lucide-react";
+import { RotateCcw, Shield, Lock, WifiOff } from "lucide-react";
 import { type ApiError } from "../api/client";
 
 export interface DiagnosticsData {
@@ -28,6 +28,26 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
   onSelectMockRole,
   diagnostics,
 }) => {
+  // Determine precise error state
+  const isMissingInitData =
+    error &&
+    (error.message.includes("кнопку Mini App") ||
+      error.message.includes("через кнопку Mini App") ||
+      (error.status === 403 && !localStorage.getItem("tma_session_token")));
+
+  const isInvalidSession =
+    error &&
+    (error.message.includes("недействительна") ||
+      error.message.includes("Сессия Telegram") ||
+      error.status === 401 ||
+      (error.status === 403 && !!localStorage.getItem("tma_session_token")));
+
+  const isNetworkError =
+    error &&
+    (error.status === 0 ||
+      error.message.includes("подключиться к серверу") ||
+      (!isMissingInitData && !isInvalidSession));
+
   return (
     <div
       className="animate-fade-in"
@@ -43,95 +63,127 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
       }}
     >
       {error ? (
-        error.status === 401 ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "20px" }}>
-            <div style={{
-              width: "80px",
-              height: "80px",
-              borderRadius: "50%",
-              backgroundColor: "rgba(255, 77, 77, 0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              marginBottom: "8px"
-            }}>
-              <Lock size={40} style={{ color: "hsl(var(--danger-hsl))" }} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>Session Expired</h2>
-              <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
-                Сессия Telegram недействительна. Откройте приложение заново из бота.
-              </p>
-            </div>
-            <button
-              onClick={() => window.location.reload()}
-              style={{
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "20px" }}>
+          {isMissingInitData && (
+            <>
+              <div style={{
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                backgroundColor: "rgba(255, 179, 0, 0.1)",
                 display: "flex",
                 alignItems: "center",
-                gap: "8px",
-                padding: "12px 24px",
-                backgroundColor: "hsl(var(--accent-hsl))",
-                color: "#fff",
-                borderRadius: "var(--radius-md)",
-                fontWeight: 600,
-                fontSize: "14px",
-                boxShadow: "var(--shadow-md)"
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
-            >
-              <RotateCcw size={16} />
-              Reload Application
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", gap: "20px" }}>
-            <div style={{
-              width: "80px",
-              height: "80px",
-              borderRadius: "50%",
-              backgroundColor: "rgba(255, 255, 255, 0.05)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              marginBottom: "8px"
-            }}>
-              {error.status === 0 ? (
+                justifyContent: "center",
+                marginBottom: "8px"
+              }}>
+                <Shield size={40} style={{ color: "hsl(var(--warning-hsl))" }} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
+                  Доступ ограничен
+                </h2>
+                <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
+                  Откройте приложение через кнопку Mini App в Telegram-боте.
+                </p>
+              </div>
+            </>
+          )}
+
+          {isInvalidSession && (
+            <>
+              <div style={{
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                backgroundColor: "rgba(255, 77, 77, 0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: "8px"
+              }}>
+                <Lock size={40} style={{ color: "hsl(var(--danger-hsl))" }} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
+                  Сессия недействительна
+                </h2>
+                <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
+                  Telegram-сессия недействительна. Откройте приложение заново из бота.
+                </p>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 24px",
+                  backgroundColor: "hsl(var(--accent-hsl))",
+                  color: "#fff",
+                  borderRadius: "var(--radius-md)",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  boxShadow: "var(--shadow-md)"
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
+              >
+                <RotateCcw size={16} />
+                Reload Application
+              </button>
+            </>
+          )}
+
+          {isNetworkError && (
+            <>
+              <div style={{
+                width: "80px",
+                height: "80px",
+                borderRadius: "50%",
+                backgroundColor: "rgba(255, 255, 255, 0.05)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: "8px"
+              }}>
                 <WifiOff size={40} style={{ color: "hsl(var(--warning-hsl))" }} />
-              ) : (
-                <AlertCircle size={40} style={{ color: "hsl(var(--danger-hsl))" }} />
-              )}
-            </div>
-            <div>
-              <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
-                {error.status === 0 ? "Connection Offline" : "Connection Failed"}
-              </h2>
-              <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
-                {error.message}
-              </p>
-            </div>
-            <button
-              onClick={onRetry}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "12px 24px",
-                backgroundColor: "hsl(var(--accent-hsl))",
-                color: "#fff",
-                borderRadius: "var(--radius-md)",
-                fontWeight: 600,
-                fontSize: "14px",
-                boxShadow: "var(--shadow-md)"
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
-            >
-              <RotateCcw size={16} />
-              Retry Connection
-            </button>
-          </div>
-        )
+              </div>
+              <div>
+                <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>
+                  Ошибка подключения
+                </h2>
+                <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
+                  Не удалось подключиться к серверу Mini App.
+                </p>
+                {isDev && (
+                  <p style={{ fontSize: "11px", color: "hsl(var(--warning-hsl))", marginTop: "8px", maxWidth: "280px" }}>
+                    CORS/config error: Check VITE_API_BASE_URL, local server logs, and CORS configurations.
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={onRetry}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 24px",
+                  backgroundColor: "hsl(var(--accent-hsl))",
+                  color: "#fff",
+                  borderRadius: "var(--radius-md)",
+                  fontWeight: 600,
+                  fontSize: "14px",
+                  boxShadow: "var(--shadow-md)"
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
+              >
+                <RotateCcw size={16} />
+                Retry Connection
+              </button>
+            </>
+          )}
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "20px" }}>
           <div
@@ -153,8 +205,8 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
         </div>
       )}
 
-      {/* Diagnostics Panel - Shown only when there is an error */}
-      {error && diagnostics && (
+      {/* Diagnostics Panel - Shown ONLY in development */}
+      {isDev && error && diagnostics && (
         <details
           style={{
             marginTop: "24px",

@@ -37,6 +37,7 @@ async def telegram_auth(
         init_data=payload.initData,
         bot_token=settings.bot_token,
         max_age=settings.miniapp_auth_max_age_seconds,
+        app_env=settings.app_env,
     )
     if tg_user is None:
         raise HTTPException(
@@ -48,7 +49,7 @@ async def telegram_auth(
 
     # 2. Resolve Role (Owner > Manager > Customer)
     authorization_service = AuthorizationService(settings)
-    role = authorization_service.detect_role(telegram_user_id)
+    role = await authorization_service.detect_role_db(telegram_user_id, session)
 
     # 3. Synchronize user profile in database using the existing TicketService helper
     ticket_service = TicketService(authorization_service)
@@ -76,6 +77,8 @@ async def telegram_auth(
         username=user.username,
         first_name=user.first_name,
         last_name=user.last_name,
+        broadcasts_enabled=user.broadcasts_enabled,
+        miniapp_url=settings.miniapp_url,
     )
 
     return TelegramAuthResponse(token=token, profile=profile)
@@ -120,4 +123,6 @@ async def get_me(
         customer_mode=customer_mode,
         selected_ticket_id=selected_ticket_id,
         feature_flags=feature_flags,
+        broadcasts_enabled=current_user.broadcasts_enabled,
+        miniapp_url=settings.miniapp_url,
     )

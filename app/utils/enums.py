@@ -16,6 +16,7 @@ class OwnerWorkflowState(StrEnum):
     PREVIEWING_BROADCAST = "PREVIEWING_BROADCAST"
     CONFIRMING_BROADCAST = "CONFIRMING_BROADCAST"
     MODEL_SELECTION = "MODEL_SELECTION"
+    AWAITING_MANAGER_ID = "AWAITING_MANAGER_ID"
 
 
 class TicketStatus(StrEnum):
@@ -76,3 +77,12 @@ class BroadcastButtonSelection(StrEnum):
     INSTAGRAM = "instagram"
     SITE = "site"
     BOTH = "both"
+
+
+class StaffRole(StrEnum):
+    MANAGER = "manager"
+
+
+class StaffStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"

@@ -401,9 +401,25 @@ class MessageRelayService:
         return []
 
     async def _started_manager_ids_with_notifications(self, session: AsyncSession) -> list[int]:
+        from app.db.models import StaffMember
+        from app.utils.enums import StaffStatus
+
+        # Query active managers from DB
+        stmt_staff = select(StaffMember.telegram_user_id).where(StaffMember.status == StaffStatus.ACTIVE.value)
+        db_staff_ids = set((await session.scalars(stmt_staff)).all())
+
+        # Merge with settings manager IDs
+        all_candidate_ids = db_staff_ids.union(self._settings.manager_ids)
+
+        # Exclude explicitly disabled staff
+        stmt_disabled = select(StaffMember.telegram_user_id).where(StaffMember.status == StaffStatus.DISABLED.value)
+        disabled_ids = set((await session.scalars(stmt_disabled)).all())
+
+        active_candidate_ids = all_candidate_ids - disabled_ids
+
         rows = await session.scalars(
             select(User.telegram_user_id).where(
-                User.telegram_user_id.in_(self._settings.manager_ids)
+                User.telegram_user_id.in_(active_candidate_ids)
             )
         )
         started_ids = list(rows)
@@ -415,6 +431,7 @@ class MessageRelayService:
             if enabled:
                 enabled_ids.append(manager_id)
         return enabled_ids
+
 
     async def _latest_preview(self, session: AsyncSession, *, ticket_id: int) -> str:
         messages = await self._ticket_messages(session, ticket_id=ticket_id, limit=1)

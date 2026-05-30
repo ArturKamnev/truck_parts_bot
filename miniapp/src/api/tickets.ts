@@ -110,3 +110,143 @@ export const sendTicketMessage = async (
   });
 };
 
+export interface StaffMember {
+  id: number;
+  telegram_user_id: number;
+  role: string;
+  status: "active" | "disabled" | string;
+  added_by_telegram_id: number | null;
+  added_at: string;
+  disabled_at: string | null;
+  notes: string | null;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+}
+
+export interface BotUser {
+  id: number;
+  telegram_user_id: number;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+}
+
+export interface ManagerStats {
+  telegram_user_id: number;
+  tickets_claimed: number;
+  tickets_closed: number;
+}
+
+export const getOwnerManagers = async (): Promise<StaffMember[]> => {
+  return apiRequest<StaffMember[]>("/api/owner/managers");
+};
+
+export const getOwnerUsers = async (): Promise<BotUser[]> => {
+  return apiRequest<BotUser[]>("/api/owner/users");
+};
+
+export const promoteManager = async (telegramUserId: number, notes?: string): Promise<StaffMember> => {
+  return apiRequest<StaffMember>(`/api/owner/managers/${telegramUserId}/promote`, {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+};
+
+export const disableManager = async (telegramUserId: number): Promise<StaffMember> => {
+  return apiRequest<StaffMember>(`/api/owner/managers/${telegramUserId}/disable`, {
+    method: "POST",
+  });
+};
+
+export const getManagerStats = async (telegramUserId: number): Promise<ManagerStats> => {
+  return apiRequest<ManagerStats>(`/api/owner/managers/${telegramUserId}/stats`);
+};
+
+// --- CRM Expansion & AI Endpoints ---
+export const createCustomerTicket = async (initialMessage: string): Promise<Ticket> => {
+  return apiRequest<Ticket>("/api/customer/tickets", {
+    method: "POST",
+    body: JSON.stringify({ initialMessage }),
+  });
+};
+
+export const sendCustomerMessage = async (ticketId: number, text: string): Promise<TicketMessage> => {
+  return apiRequest<TicketMessage>(`/api/customer/tickets/${ticketId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+};
+
+export const getManagerClosedTickets = async (): Promise<Ticket[]> => {
+  return apiRequest<Ticket[]>("/api/manager/tickets/closed");
+};
+
+export interface AIMessage {
+  id: number;
+  role: string;
+  content: string;
+  model_id: string | null;
+  created_at: string;
+}
+
+export const sendAIChatMessage = async (message: string): Promise<{ response: string; model_id: string }> => {
+  return apiRequest<{ response: string; model_id: string }>("/api/ai/chat", {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+};
+
+export const getAIChatHistory = async (): Promise<AIMessage[]> => {
+  return apiRequest<AIMessage[]>("/api/ai/history");
+};
+
+export interface Broadcast {
+  id: number;
+  created_by_telegram_id: number;
+  status: string;
+  content_preview: string | null;
+  recipient_count: number;
+  delivered_count: number;
+  failed_count: number;
+  blocked_count: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface ActiveModelInfo {
+  active_model: string;
+  available_models: Record<string, string>;
+}
+
+export const toggleBroadcastSettings = async (enabled: boolean): Promise<boolean> => {
+  return apiRequest<boolean>("/api/customer/profile/broadcast-toggle", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+};
+
+export const getManagerPersonalStats = async (): Promise<{ tickets_claimed: number; tickets_closed: number }> => {
+  return apiRequest<{ tickets_claimed: number; tickets_closed: number }>("/api/manager/stats");
+};
+
+export const getActiveModel = async (): Promise<ActiveModelInfo> => {
+  return apiRequest<ActiveModelInfo>("/api/owner/settings/active-model");
+};
+
+export const switchActiveModel = async (modelId: string): Promise<string> => {
+  return apiRequest<string>("/api/owner/settings/active-model", {
+    method: "POST",
+    body: JSON.stringify({ model_id: modelId }),
+  });
+};
+
+export const getOwnerBroadcasts = async (): Promise<Broadcast[]> => {
+  return apiRequest<Broadcast[]>("/api/owner/broadcasts");
+};
+
+
+
+

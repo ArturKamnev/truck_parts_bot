@@ -59,13 +59,43 @@ export const apiRequest = async <T>(
   try {
     const response = await fetch(url, config);
 
-    if (response.status === 401) {
-      triggerAuthError();
-      throw { status: 401, message: "Unauthorized / Expired session" } as ApiError;
-    }
+    if ((response.status === 401 || response.status === 403) && path !== "/api/auth/telegram") {
+      if (typeof window !== "undefined" && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+        try {
+          const initData = window.Telegram.WebApp.initData;
+          const authRes = await fetch(`${API_BASE_URL}/api/auth/telegram`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ initData }),
+          });
 
-    if (response.status === 403) {
-      throw { status: 403, message: "Forbidden: Access denied" } as ApiError;
+          if (authRes.ok) {
+            const authData = await authRes.json();
+            setStoredToken(authData.token);
+            localStorage.setItem("tma_user_profile", JSON.stringify(authData.profile));
+
+            const newHeaders = new Headers(options.headers);
+            newHeaders.set("Authorization", `Bearer ${authData.token}`);
+            if (!(options.body instanceof FormData) && !newHeaders.has("Content-Type")) {
+              newHeaders.set("Content-Type", "application/json");
+            }
+            const newConfig = {
+              ...options,
+              headers: newHeaders,
+            };
+            return await apiRequest<T>(path, newConfig);
+          }
+        } catch (reauthErr) {
+          console.error("Silent re-authentication failed:", reauthErr);
+        }
+      }
+
+      triggerAuthError();
+      localStorage.removeItem("tma_user_profile");
+      const errMsg = "Telegram-сессия недействительна. Откройте приложение заново из бота.";
+      throw { status: response.status, message: errMsg } as ApiError;
     }
 
     if (!response.ok) {

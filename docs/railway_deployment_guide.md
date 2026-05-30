@@ -48,7 +48,7 @@ graph TD
    - `BOT_TOKEN`: *[Your Telegram Bot Token]*
    - `OPENROUTER_API_KEY`: *[Your OpenRouter API Key]*
    - `OWNER_ID`: *[Owner's numeric Telegram ID]*
-   - `MANAGER_IDS`: *[11 unique manager numeric Telegram IDs, comma-separated]*
+   - `MANAGER_IDS`: *[Initial managers comma-separated Telegram IDs to seed upon deployment]*
    - `DEFAULT_MODEL`: `deepseek/deepseek-v4-flash:free`
    - `AI_HISTORY_LIMIT`: `12`
    - `LOG_LEVEL`: `INFO`
@@ -73,7 +73,7 @@ graph TD
    - `DATABASE_URL`: `${{PostgreSQL.DATABASE_URL}}`
    - `BOT_TOKEN`: *[Your Telegram Bot Token]*
    - `OWNER_ID`: *[Owner's numeric Telegram ID]*
-   - `MANAGER_IDS`: *[11 unique manager numeric Telegram IDs, comma-separated]*
+   - `MANAGER_IDS`: *[Initial managers comma-separated Telegram IDs to seed]*
    - `MINIAPP_SESSION_SECRET`: *[A secure, long, random key. The API will fail fast if this is default or missing in production]*
    - `MINIAPP_AUTH_MAX_AGE_SECONDS`: `86400`
    - `MINIAPP_ORIGIN`: *[Will be configured to match the public URL of the `miniapp-service` once deployed]*

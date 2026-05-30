@@ -21,7 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.utils.enums import BroadcastStatus, CustomerMode, TicketStatus
+from app.utils.enums import BroadcastStatus, CustomerMode, TicketStatus, StaffRole, StaffStatus
 
 
 class User(Base):
@@ -249,3 +249,19 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class StaffMember(Base):
+    __tablename__ = "staff_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
+    role: Mapped[str] = mapped_column(String(32), default=StaffRole.MANAGER.value, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default=StaffStatus.ACTIVE.value, nullable=False)
+    added_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
