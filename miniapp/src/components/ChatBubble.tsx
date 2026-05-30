@@ -4,7 +4,7 @@ import { type TicketMessage } from "../api/tickets";
 
 interface ChatBubbleProps {
   message: TicketMessage;
-  viewerRole: "customer" | "manager" | "owner";
+  viewerRole: "customer" | "manager" | "owner" | "co_owner";
   onRetry?: (msg: TicketMessage) => void;
 }
 

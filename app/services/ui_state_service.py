@@ -59,7 +59,7 @@ class UIStateService:
             first_name=None,
             last_name=None,
         )
-        role = self.authorization.detect_role(user_id)
+        role = await self.authorization.detect_role_db(user_id, session)
         locale = user.preferred_language or "ru"
 
         text = ""
@@ -69,14 +69,14 @@ class UIStateService:
 
         # Fetch operator session if support role
         op_session = None
-        if role in {"owner", "manager"}:
+        if role in {"owner", "co_owner", "manager"}:
             op_session = await session.get(OperatorSession, user_id)
             if op_session is None:
                 op_session = OperatorSession(operator_telegram_id=user_id)
                 session.add(op_session)
                 await session.flush()
 
-        if role == "owner":
+        if role in {"owner", "co_owner"}:
             active_model = await self.settings_service.get_active_model(session)
             workflow_state = op_session.workflow_state if op_session else None
             selected_ticket_id = op_session.selected_ticket_id if op_session else None
@@ -136,7 +136,10 @@ class UIStateService:
                 state_log_name = "normal_panel"
 
             reply_markup = self.keyboard_service.get_owner_keyboard(
-                workflow_state, selected_ticket_id, locale
+                workflow_state,
+                selected_ticket_id,
+                locale,
+                can_manage_settings=role == "owner",
             )
 
         elif role == "manager":

@@ -24,6 +24,7 @@ from app.keyboards.inline import (
     active_ticket_keyboard,
     ticket_claim_keyboard,
 )
+from app.i18n.translator import get_button_text_set
 from app.services.authorization_service import AuthorizationService
 from app.services.broadcast_service import BroadcastService
 from app.services.relay_service import RelayService
@@ -36,20 +37,23 @@ from app.utils.exceptions import AuthorizationError, UnsupportedRelayContentErro
 logger = logging.getLogger(__name__)
 router = Router(name="manager")
 
-MANAGER_MENU_TEXTS = {
-    MANAGER_NEW_TICKETS,
-    MANAGER_ACTIVE_CHATS,
-    MANAGER_STATS,
-    MANAGER_NOTIFICATIONS_ON,
-    MANAGER_NOTIFICATIONS_OFF,
-    MANAGER_CLOSE_TICKET,
-    MANAGER_EXIT_REPLY,
-    MANAGER_MY_DIALOGS,
-}
+MANAGER_MENU_TEXTS = set()
+for key in [
+    "manager.new_tickets",
+    "manager.active_chats",
+    "manager.stats",
+    "manager.notifications_on",
+    "manager.notifications_off",
+    "manager.close_ticket",
+    "manager.exit_reply",
+    "manager.my_dialogs",
+    "bot.language_btn",
+]:
+    MANAGER_MENU_TEXTS.update(get_button_text_set(key))
 
 
 @router.message(IsSupport(), Command("mystats"))
-@router.message(IsSupport(), F.text == MANAGER_STATS, F.chat.type == "private")
+@router.message(IsSupport(), F.text.in_(set(get_button_text_set("manager.stats"))), F.chat.type == "private")
 async def manager_stats(
     message: Message,
     bot: Bot,
@@ -80,7 +84,7 @@ async def manager_stats(
         )
 
 
-@router.message(IsSupport(), F.text == MANAGER_NEW_TICKETS, F.chat.type == "private")
+@router.message(IsSupport(), F.text.in_(set(get_button_text_set("manager.new_tickets"))), F.chat.type == "private")
 async def manager_new_tickets(
     message: Message,
     bot: Bot,
@@ -138,7 +142,7 @@ async def manager_new_tickets(
         )
 
 
-@router.message(IsSupport(), F.text == MANAGER_ACTIVE_CHATS, F.chat.type == "private")
+@router.message(IsSupport(), F.text.in_(set(get_button_text_set("manager.active_chats"))), F.chat.type == "private")
 async def manager_active_chats(
     message: Message,
     bot: Bot,
@@ -189,7 +193,7 @@ async def manager_active_chats(
 
 @router.message(
     IsSupport(),
-    F.text.in_({MANAGER_NOTIFICATIONS_ON, MANAGER_NOTIFICATIONS_OFF}),
+    F.text.in_(set(get_button_text_set("manager.notifications_on") + get_button_text_set("manager.notifications_off"))),
     F.chat.type == "private",
 )
 async def toggle_notifications(
@@ -219,7 +223,7 @@ async def toggle_notifications(
         )
 
 
-@router.message(IsSupport(), F.text == MANAGER_CLOSE_TICKET, F.chat.type == "private")
+@router.message(IsSupport(), F.text.in_(set(get_button_text_set("manager.close_ticket"))), F.chat.type == "private")
 async def manager_close_ticket_text(
     message: Message,
     bot: Bot,
@@ -263,7 +267,7 @@ async def manager_close_ticket_text(
         )
 
 
-@router.message(IsSupport(), F.text == MANAGER_EXIT_REPLY, F.chat.type == "private")
+@router.message(IsSupport(), F.text.in_(set(get_button_text_set("manager.exit_reply"))), F.chat.type == "private")
 async def manager_exit_reply_text(
     message: Message,
     bot: Bot,
@@ -286,7 +290,7 @@ async def manager_exit_reply_text(
         )
 
 
-@router.message(IsSupport(), F.text == MANAGER_MY_DIALOGS, F.chat.type == "private")
+@router.message(IsSupport(), F.text.in_(set(get_button_text_set("manager.my_dialogs"))), F.chat.type == "private")
 async def manager_my_dialogs_text(
     message: Message,
     bot: Bot,

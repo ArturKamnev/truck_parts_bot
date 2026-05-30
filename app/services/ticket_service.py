@@ -205,7 +205,7 @@ class TicketService:
     async def claim_ticket(
         self, session: AsyncSession, *, ticket_id: int, manager_telegram_id: int
     ) -> Ticket:
-        if not self._authorization.can_use_support_tools(manager_telegram_id):
+        if not await self._authorization.can_use_support_tools_db(manager_telegram_id, session):
             raise AuthorizationError("Not allowed to claim tickets")
 
         now = datetime.now(UTC)
@@ -254,7 +254,7 @@ class TicketService:
     async def select_ticket(
         self, session: AsyncSession, *, operator_telegram_id: int, ticket: Ticket
     ) -> OperatorSession:
-        if not self.can_send_manager_reply(ticket, operator_telegram_id):
+        if not await self.can_send_manager_reply_db(session, ticket, operator_telegram_id):
             raise AuthorizationError("Not allowed to select this ticket")
         operator_session = await session.get(OperatorSession, operator_telegram_id)
         if operator_session is None:
@@ -263,7 +263,10 @@ class TicketService:
         operator_session.selected_ticket_id = ticket.id
         operator_session.updated_at = datetime.now(UTC)
         if (
-            self._authorization.is_owner(operator_telegram_id)
+            (
+                self._authorization.is_owner(operator_telegram_id)
+                or await self._authorization.is_co_owner_db(operator_telegram_id, session)
+            )
             and ticket.status == TicketStatus.OPEN.value
         ):
             ticket.customer.mode = CustomerMode.MANAGER_CHAT.value
@@ -277,7 +280,7 @@ class TicketService:
         if operator_session is None or operator_session.selected_ticket_id is None:
             return None
         ticket = await self.get_ticket(session, ticket_id=operator_session.selected_ticket_id)
-        if not self.can_send_manager_reply(ticket, operator_telegram_id):
+        if not await self.can_send_manager_reply_db(session, ticket, operator_telegram_id):
             operator_session.selected_ticket_id = None
             await session.flush()
             return None
@@ -314,10 +317,15 @@ class TicketService:
     ) -> Ticket:
         ticket = await self.get_ticket(session, ticket_id=ticket_id)
         can_owner_close = (
-            self._authorization.is_owner(actor_telegram_id)
+            (
+                self._authorization.is_owner(actor_telegram_id)
+                or await self._authorization.is_co_owner_db(actor_telegram_id, session)
+            )
             and ticket.status in ACTIVE_TICKET_STATUSES
         )
-        if not can_owner_close and not self.can_send_manager_reply(ticket, actor_telegram_id):
+        if not can_owner_close and not await self.can_send_manager_reply_db(
+            session, ticket, actor_telegram_id
+        ):
             raise AuthorizationError("Not allowed to close this ticket")
         if ticket.status not in ACTIVE_TICKET_STATUSES:
             return ticket
@@ -396,10 +404,36 @@ class TicketService:
             and ticket.assigned_manager_telegram_id == actor_telegram_id
         )
 
+    async def can_send_manager_reply_db(
+        self, session: AsyncSession, ticket: Ticket, actor_telegram_id: int
+    ) -> bool:
+        role = await self._authorization.detect_role_db(actor_telegram_id, session)
+        if role in {"owner", "co_owner"}:
+            return ticket.status in ACTIVE_TICKET_STATUSES
+        if role != "manager":
+            return False
+        return (
+            ticket.status == TicketStatus.CLAIMED.value
+            and ticket.assigned_manager_telegram_id == actor_telegram_id
+        )
+
     def can_view_manager_ticket(self, ticket: Ticket, actor_telegram_id: int) -> bool:
         if self._authorization.is_owner(actor_telegram_id):
             return ticket.status in ACTIVE_TICKET_STATUSES
         if self._authorization.is_manager(actor_telegram_id):
+            return ticket.status == TicketStatus.OPEN.value or (
+                ticket.status == TicketStatus.CLAIMED.value
+                and ticket.assigned_manager_telegram_id == actor_telegram_id
+            )
+        return False
+
+    async def can_view_manager_ticket_db(
+        self, session: AsyncSession, ticket: Ticket, actor_telegram_id: int
+    ) -> bool:
+        role = await self._authorization.detect_role_db(actor_telegram_id, session)
+        if role in {"owner", "co_owner"}:
+            return ticket.status in ACTIVE_TICKET_STATUSES
+        if role == "manager":
             return ticket.status == TicketStatus.OPEN.value or (
                 ticket.status == TicketStatus.CLAIMED.value
                 and ticket.assigned_manager_telegram_id == actor_telegram_id
@@ -466,7 +500,13 @@ class TicketService:
                 OperatorSession.selected_ticket_id == ticket_id
             )
         )
-        return [operator_id for operator_id in rows if self._authorization.is_owner(operator_id)]
+        owner_ids = []
+        for operator_id in rows:
+            if self._authorization.is_owner(
+                operator_id
+            ) or await self._authorization.is_co_owner_db(operator_id, session):
+                owner_ids.append(operator_id)
+        return owner_ids
 
     async def get_manager_notifications_enabled(
         self, session: AsyncSession, *, manager_telegram_id: int

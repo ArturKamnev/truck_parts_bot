@@ -42,7 +42,7 @@ class BroadcastService:
         self._send_task: asyncio.Task | None = None
 
     async def start_draft(self, session: AsyncSession, *, owner_telegram_id: int) -> Broadcast:
-        self._ensure_owner(owner_telegram_id)
+        await self._ensure_broadcaster(session, owner_telegram_id)
         await self.cancel_active_draft(session, owner_telegram_id=owner_telegram_id)
         broadcast = Broadcast(created_by_telegram_id=owner_telegram_id)
         session.add(broadcast)
@@ -57,7 +57,7 @@ class BroadcastService:
     async def cancel_active_draft(
         self, session: AsyncSession, *, owner_telegram_id: int
     ) -> Broadcast | None:
-        self._ensure_owner(owner_telegram_id)
+        await self._ensure_broadcaster(session, owner_telegram_id)
         owner_session = await self._operator_session(session, owner_telegram_id)
         broadcast = None
         if owner_session.active_broadcast_id is not None:
@@ -76,7 +76,7 @@ class BroadcastService:
     async def active_owner_state(
         self, session: AsyncSession, *, owner_telegram_id: int
     ) -> str | None:
-        if not self._authorization.is_owner(owner_telegram_id):
+        if not await self._authorization.can_manage_staff_db(owner_telegram_id, session):
             return None
         owner_session = await session.get(OperatorSession, owner_telegram_id)
         return owner_session.workflow_state if owner_session else None
@@ -84,7 +84,7 @@ class BroadcastService:
     async def get_active_draft(
         self, session: AsyncSession, *, owner_telegram_id: int
     ) -> Broadcast | None:
-        if not self._authorization.is_owner(owner_telegram_id):
+        if not await self._authorization.can_manage_staff_db(owner_telegram_id, session):
             return None
         owner_session = await session.get(OperatorSession, owner_telegram_id)
         if owner_session is None or owner_session.active_broadcast_id is None:
@@ -98,7 +98,7 @@ class BroadcastService:
         owner_telegram_id: int,
         message: Any,
     ) -> Broadcast:
-        self._ensure_owner(owner_telegram_id)
+        await self._ensure_broadcaster(session, owner_telegram_id)
         broadcast = await self.get_active_draft(session, owner_telegram_id=owner_telegram_id)
         if broadcast is None:
             raise TicketStateError("Нет активного черновика рассылки.")
@@ -153,7 +153,7 @@ class BroadcastService:
         broadcast_id: int,
         selection: BroadcastButtonSelection,
     ) -> Broadcast:
-        self._ensure_owner(owner_telegram_id)
+        await self._ensure_broadcaster(session, owner_telegram_id)
         if not self.is_button_selection_available(selection):
             raise AuthorizationError("Эта кнопка не настроена.")
         broadcast = await self._owned_broadcast(session, owner_telegram_id, broadcast_id)
@@ -181,7 +181,7 @@ class BroadcastService:
     async def start_sending(
         self, session: AsyncSession, *, owner_telegram_id: int, broadcast_id: int
     ) -> Broadcast:
-        self._ensure_owner(owner_telegram_id)
+        await self._ensure_broadcaster(session, owner_telegram_id)
         if await self.has_active_sending_job(session):
             raise TicketStateError("Уже выполняется другая рассылка.")
         broadcast = await self._owned_broadcast(session, owner_telegram_id, broadcast_id)
@@ -434,12 +434,12 @@ class BroadcastService:
     async def _owned_broadcast(
         self, session: AsyncSession, owner_telegram_id: int, broadcast_id: int
     ) -> Broadcast:
-        self._ensure_owner(owner_telegram_id)
+        await self._ensure_broadcaster(session, owner_telegram_id)
         broadcast = await session.get(Broadcast, broadcast_id)
         if broadcast is None or broadcast.created_by_telegram_id != owner_telegram_id:
             raise AuthorizationError("Недостаточно прав")
         return broadcast
 
-    def _ensure_owner(self, telegram_user_id: int) -> None:
-        if not self._authorization.is_owner(telegram_user_id):
+    async def _ensure_broadcaster(self, session: AsyncSession, telegram_user_id: int) -> None:
+        if not await self._authorization.can_manage_staff_db(telegram_user_id, session):
             raise AuthorizationError("Недостаточно прав")

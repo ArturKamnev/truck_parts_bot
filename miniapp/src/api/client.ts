@@ -1,4 +1,6 @@
 // Fetch-based API client for communicating with FastAPI backend
+import { waitForTelegramLaunchContext } from "../telegram/webapp";
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
 export interface ApiError {
@@ -60,9 +62,11 @@ export const apiRequest = async <T>(
     const response = await fetch(url, config);
 
     if ((response.status === 401 || response.status === 403) && path !== "/api/auth/telegram") {
-      if (typeof window !== "undefined" && window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) {
+      if (typeof window !== "undefined") {
         try {
-          const initData = window.Telegram.WebApp.initData;
+          clearStoredToken();
+          const { initData } = await waitForTelegramLaunchContext(3500);
+          if (!initData) throw new Error("Missing Telegram initData for silent re-auth");
           const authRes = await fetch(`${API_BASE_URL}/api/auth/telegram`, {
             method: "POST",
             headers: {
@@ -88,7 +92,7 @@ export const apiRequest = async <T>(
             return await apiRequest<T>(path, newConfig);
           }
         } catch (reauthErr) {
-          console.error("Silent re-authentication failed:", reauthErr);
+          if (import.meta.env.DEV) console.warn("Silent re-authentication failed:", reauthErr);
         }
       }
 
@@ -116,6 +120,6 @@ export const apiRequest = async <T>(
       throw error;
     }
     // Network errors
-    throw { status: 0, message: "Network connection failure. Make sure server is running." } as ApiError;
+    throw { status: 0, message: "API unreachable or CORS/config error. Check API base URL and server CORS settings." } as ApiError;
   }
 };

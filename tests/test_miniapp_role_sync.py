@@ -239,3 +239,127 @@ async def test_owner_endpoints_access_control(session, settings: Settings, app_o
         res = await ac.get("/api/me", headers=customer_headers)
         assert res.status_code == 200
         assert res.json()["role"] == "customer"
+
+
+@pytest.mark.anyio
+async def test_co_owner_role_boundaries_and_manager_demotion(
+    session, settings: Settings, app_override_session
+) -> None:
+    now = datetime.now(UTC)
+    co_owner_id = 2020
+    manager_id = 3030
+    customer_id = 4040
+    user_to_manage_id = 5050
+    session.add_all(
+        [
+            User(telegram_user_id=co_owner_id, username="co", first_name="Co", last_seen_at=now),
+            User(telegram_user_id=manager_id, username="mgr", first_name="Mgr", last_seen_at=now),
+            User(telegram_user_id=customer_id, username="cust", first_name="Cust", last_seen_at=now),
+            User(telegram_user_id=user_to_manage_id, username="future", first_name="Future", last_seen_at=now),
+        ]
+    )
+    await session.commit()
+    customer = await session.scalar(select(User).where(User.telegram_user_id == customer_id))
+    session.add_all(
+        [
+            StaffMember(
+                telegram_user_id=co_owner_id,
+                role=StaffRole.CO_OWNER.value,
+                status=StaffStatus.ACTIVE.value,
+            ),
+            StaffMember(
+                telegram_user_id=manager_id,
+                role=StaffRole.MANAGER.value,
+                status=StaffStatus.ACTIVE.value,
+            ),
+        ]
+    )
+    ticket = Ticket(
+        customer_id=customer.id,
+        status=TicketStatus.CLAIMED.value,
+        assigned_manager_telegram_id=manager_id,
+        claimed_at=now,
+        created_at=now,
+    )
+    session.add(ticket)
+    await session.commit()
+
+    owner_token = create_signed_session_token(settings.owner_id, "owner", settings.miniapp_session_secret, 3600)
+    co_token = create_signed_session_token(co_owner_id, "co_owner", settings.miniapp_session_secret, 3600)
+    manager_token = create_signed_session_token(manager_id, "manager", settings.miniapp_session_secret, 3600)
+    customer_token = create_signed_session_token(customer_id, "customer", settings.miniapp_session_secret, 3600)
+    owner_headers = {"Authorization": f"Bearer {owner_token}"}
+    co_headers = {"Authorization": f"Bearer {co_token}"}
+    manager_headers = {"Authorization": f"Bearer {manager_token}"}
+    customer_headers = {"Authorization": f"Bearer {customer_token}"}
+
+    async with AsyncClient(transport=ASGITransport(app=app_override_session), base_url="http://test") as ac:
+        res = await ac.get("/api/me", headers=co_headers)
+        assert res.status_code == 200
+        assert res.json()["role"] == "co_owner"
+
+        res = await ac.get("/api/owner/stats", headers=co_headers)
+        assert res.status_code == 200
+        res = await ac.get("/api/owner/managers", headers=co_headers)
+        assert res.status_code == 200
+        res = await ac.get("/api/manager/tickets/active", headers=co_headers)
+        assert res.status_code == 200
+
+        res = await ac.post(
+            f"/api/owner/managers/{user_to_manage_id}/promote",
+            json={"notes": "co-owner promoted"},
+            headers=co_headers,
+        )
+        assert res.status_code == 200
+        assert res.json()["role"] == "manager"
+
+        res = await ac.post(
+            f"/api/owner/managers/{user_to_manage_id}/disable",
+            headers=co_headers,
+        )
+        assert res.status_code == 200
+        assert res.json()["status"] == "disabled"
+
+        res = await ac.post(
+            f"/api/owner/co-owners/{manager_id}/promote",
+            json={},
+            headers=co_headers,
+        )
+        assert res.status_code == status.HTTP_403_FORBIDDEN
+
+        res = await ac.post(
+            f"/api/owner/co-owners/{manager_id}/promote",
+            json={"notes": "trusted"},
+            headers=owner_headers,
+        )
+        assert res.status_code == 200
+        assert res.json()["role"] == "co_owner"
+
+        res = await ac.post(
+            f"/api/owner/managers/{manager_id}/disable",
+            headers=co_headers,
+        )
+        assert res.status_code == status.HTTP_403_FORBIDDEN
+
+        res = await ac.post(
+            f"/api/owner/co-owners/{manager_id}/disable",
+            headers=owner_headers,
+        )
+        assert res.status_code == 200
+        assert res.json()["status"] == "disabled"
+
+        res = await ac.get("/api/me", headers=manager_headers)
+        assert res.status_code == 200
+        assert res.json()["role"] == "customer"
+
+        await session.refresh(ticket)
+        assert ticket.status == TicketStatus.OPEN.value
+        assert ticket.assigned_manager_telegram_id is None
+
+        for headers in [manager_headers, customer_headers]:
+            res = await ac.post(
+                f"/api/owner/co-owners/{customer_id}/promote",
+                json={},
+                headers=headers,
+            )
+            assert res.status_code == status.HTTP_403_FORBIDDEN

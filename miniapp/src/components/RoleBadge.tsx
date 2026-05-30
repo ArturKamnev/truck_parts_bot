@@ -11,6 +11,11 @@ export const RoleBadge: React.FC<RoleBadgeProps> = ({ role }) => {
       text: "rgb(255, 120, 80)",
       label: "OWNER",
     },
+    co_owner: {
+      bg: "rgba(255, 179, 0, 0.15)",
+      text: "rgb(255, 199, 90)",
+      label: "CO-OWNER",
+    },
     manager: {
       bg: "rgba(82, 136, 193, 0.15)",
       text: "rgb(112, 172, 237)",

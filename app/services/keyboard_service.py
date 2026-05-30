@@ -64,7 +64,12 @@ class KeyboardService:
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
     def get_owner_keyboard(
-        self, workflow_state: str | None, selected_ticket_id: int | None, locale: str | None = None
+        self,
+        workflow_state: str | None,
+        selected_ticket_id: int | None,
+        locale: str | None = None,
+        *,
+        can_manage_settings: bool = True,
     ) -> ReplyKeyboardMarkup:
         is_temporary_mode = (
             workflow_state
@@ -84,8 +89,10 @@ class KeyboardService:
                 KeyboardButton(text=translate("owner.back", locale))
             ]]
         else:
-            keyboard = [
-                [KeyboardButton(text=translate("owner.choose_model", locale))],
+            keyboard = []
+            if can_manage_settings:
+                keyboard.append([KeyboardButton(text=translate("owner.choose_model", locale))])
+            keyboard.extend([
                 [
                     KeyboardButton(text=translate("owner.stats", locale)),
                     KeyboardButton(text=translate("owner.tickets", locale))
@@ -102,5 +109,5 @@ class KeyboardService:
                     KeyboardButton(text=translate("owner.manager_stats", locale)),
                     KeyboardButton(text=translate("bot.language_btn", locale)),
                 ],
-            ]
+            ])
         return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)

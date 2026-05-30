@@ -166,3 +166,37 @@ async def test_protected_endpoint_access(app_override_session, settings: Setting
         assert profile["telegram_user_id"] == 12345
         assert profile["username"] == "testuser"
         assert profile["role"] == "customer"
+
+
+@pytest.mark.anyio
+async def test_language_update_is_fresh_and_manual_preference_survives_auth(
+    app_override_session, settings: Settings, session
+) -> None:
+    user_dict = {
+        "id": 77777,
+        "first_name": "Lang",
+        "username": "lang_user",
+        "language_code": "en",
+    }
+    init_data = generate_init_data(user_dict, settings.bot_token, int(time.time()))
+
+    async with AsyncClient(transport=ASGITransport(app=app_override_session), base_url="http://test") as ac:
+        response = await ac.post("/api/auth/telegram", json={"initData": init_data})
+        assert response.status_code == 200
+        token = response.json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        assert response.json()["profile"]["preferred_language"] == "en"
+
+        response = await ac.post("/api/profile/language", json={"language": "ky"}, headers=headers)
+        assert response.status_code == 200
+        assert response.json() == "ky"
+
+        response = await ac.get("/api/me", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["preferred_language"] == "ky"
+
+        user_dict["language_code"] = "ru"
+        init_data = generate_init_data(user_dict, settings.bot_token, int(time.time()))
+        response = await ac.post("/api/auth/telegram", json={"initData": init_data})
+        assert response.status_code == 200
+        assert response.json()["profile"]["preferred_language"] == "ky"

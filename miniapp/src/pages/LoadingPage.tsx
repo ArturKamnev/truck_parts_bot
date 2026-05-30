@@ -17,7 +17,7 @@ interface LoadingPageProps {
   error: ApiError | null;
   onRetry: () => void;
   isDev: boolean;
-  onSelectMockRole?: (role: "customer" | "manager" | "owner") => void;
+  onSelectMockRole?: (role: "customer" | "manager" | "owner" | "co_owner") => void;
   diagnostics?: DiagnosticsData | null;
 }
 
@@ -112,7 +112,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
                 </p>
               </div>
               <button
-                onClick={() => window.location.reload()}
+                onClick={onRetry}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -265,7 +265,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
             No Telegram environment detected. Choose a mock role to test the Mini App interfaces:
           </p>
           <div style={{ display: "flex", gap: "8px", width: "100%" }}>
-            {(["customer", "manager", "owner"] as const).map((role) => (
+            {(["customer", "manager", "owner", "co_owner"] as const).map((role) => (
               <button
                 key={role}
                 onClick={() => onSelectMockRole(role)}

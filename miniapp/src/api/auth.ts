@@ -2,7 +2,7 @@ import { apiRequest } from "./client";
 
 export interface UserProfile {
   telegram_user_id: number;
-  role: "customer" | "manager" | "owner";
+  role: "customer" | "manager" | "owner" | "co_owner";
   username: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -15,6 +15,7 @@ export interface UserProfile {
     ai_streaming_enabled?: boolean;
     [key: string]: any;
   };
+  preferred_language: "ru" | "en" | "ky" | string | null;
 }
 
 export interface AuthResponse {
@@ -31,4 +32,11 @@ export const authenticateTelegram = async (initData: string): Promise<AuthRespon
 
 export const getMe = async (): Promise<UserProfile> => {
   return apiRequest<UserProfile>("/api/me");
+};
+
+export const updateLanguage = async (language: "ru" | "en" | "ky"): Promise<string> => {
+  return apiRequest<string>("/api/profile/language", {
+    method: "POST",
+    body: JSON.stringify({ language }),
+  });
 };

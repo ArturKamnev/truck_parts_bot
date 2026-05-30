@@ -81,6 +81,7 @@ class BroadcastButtonSelection(StrEnum):
 
 class StaffRole(StrEnum):
     MANAGER = "manager"
+    CO_OWNER = "co_owner"
 
 
 class StaffStatus(StrEnum):

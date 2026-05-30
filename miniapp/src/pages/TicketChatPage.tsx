@@ -11,7 +11,7 @@ import { type ApiError } from "../api/client";
 
 interface TicketChatPageProps {
   ticketId: number;
-  viewerRole: "customer" | "manager" | "owner";
+  viewerRole: "customer" | "manager" | "owner" | "co_owner";
   onBack: () => void;
 }
 
@@ -202,7 +202,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
     const tempMsg: TicketMessage = {
       id: tempMsgId,
       ticketId,
-      senderType: viewerRole === "customer" ? "customer" : (viewerRole === "owner" ? "owner" : "manager"),
+      senderType: viewerRole === "customer" ? "customer" : (viewerRole === "owner" || viewerRole === "co_owner" ? "owner" : "manager"),
       contentType: "text",
       textPreview: content,
       captionPreview: null,
@@ -294,7 +294,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
 
         {viewerRole !== "customer" && ticket && (ticket.status === "OPEN" || ticket.status === "CLAIMED") && (
           (viewerRole === "manager" && ticket.assigned_manager_telegram_id === ticket.assigned_manager_telegram_id) || 
-          (viewerRole === "owner" && asSupervisor)
+          ((viewerRole === "owner" || viewerRole === "co_owner") && asSupervisor)
         ) ? (
           <button
             onClick={() => setShowCloseConfirm(true)}
@@ -354,7 +354,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
           </div>
 
           {/* Owner Supervisor toggle */}
-          {viewerRole === "owner" && (
+          {(viewerRole === "owner" || viewerRole === "co_owner") && (
             <div
               style={{
                 display: "flex",
@@ -513,7 +513,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 Send
               </button>
             </form>
-          ) : viewerRole === "owner" && !asSupervisor ? (
+          ) : (viewerRole === "owner" || viewerRole === "co_owner") && !asSupervisor ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "13px" }}>
               <span>You are in read-only mode. Enable Supervisor Mode above to write.</span>
             </div>

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, UTC
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,10 +14,10 @@ from app.api.dependencies import (
 )
 from app.api.schemas.tickets import OwnerStatsResponse, TicketResponse
 from app.config import get_settings, Settings
-from app.db.models import Ticket, StaffMember, User
+from app.db.models import OperatorSession, Ticket, StaffMember, User
 from app.db.session import get_session
 from app.services.statistics_service import StatisticsService
-from app.utils.enums import StaffRole, StaffStatus
+from app.utils.enums import StaffRole, StaffStatus, TicketStatus
 
 router = APIRouter(prefix="/owner", tags=["owner"])
 
@@ -27,6 +27,16 @@ def verify_owner_role(session_payload: dict = Depends(get_current_user_session))
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Only owner is allowed to access owner endpoints",
+        )
+
+
+def verify_owner_or_co_owner_role(
+    session_payload: dict = Depends(get_current_user_session),
+) -> None:
+    if session_payload["role"] not in {"owner", "co_owner"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Only owner and co-owner are allowed to access owner endpoints",
         )
 
 
@@ -64,9 +74,56 @@ class ManagerStatsResponse(BaseModel):
     tickets_closed: int
 
 
+async def _staff_response(session: AsyncSession, staff: StaffMember) -> StaffMemberResponse:
+    user_stmt = select(User).where(User.telegram_user_id == staff.telegram_user_id)
+    user = await session.scalar(user_stmt)
+    username = user.username if user else None
+    first_name = user.first_name if user else None
+    last_name = user.last_name if user else None
+    if user:
+        parts = [p for p in (user.first_name, user.last_name) if p]
+        display_name = " ".join(parts) if parts else (user.username or f"User {user.telegram_user_id}")
+    else:
+        display_name = f"Telegram ID {staff.telegram_user_id}"
+    return StaffMemberResponse(
+        id=staff.id,
+        telegram_user_id=staff.telegram_user_id,
+        role=staff.role,
+        status=staff.status,
+        added_by_telegram_id=staff.added_by_telegram_id,
+        added_at=staff.added_at,
+        disabled_at=staff.disabled_at,
+        notes=staff.notes,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
+        display_name=display_name,
+    )
+
+
+async def _unassign_active_tickets(session: AsyncSession, telegram_user_id: int) -> None:
+    await session.execute(
+        update(Ticket)
+        .where(
+            Ticket.assigned_manager_telegram_id == telegram_user_id,
+            Ticket.status == TicketStatus.CLAIMED.value,
+        )
+        .values(
+            status=TicketStatus.OPEN.value,
+            assigned_manager_telegram_id=None,
+            claimed_at=None,
+        )
+    )
+    await session.execute(
+        update(OperatorSession)
+        .where(OperatorSession.operator_telegram_id == telegram_user_id)
+        .values(selected_ticket_id=None, updated_at=datetime.now(UTC))
+    )
+
+
 # --- Endpoints ---
 
-@router.get("/tickets", response_model=list[TicketResponse], dependencies=[Depends(verify_owner_role)])
+@router.get("/tickets", response_model=list[TicketResponse], dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def list_all_tickets(
     session: AsyncSession = Depends(get_session),
 ) -> list[TicketResponse]:
@@ -98,7 +155,7 @@ async def list_all_tickets(
     ]
 
 
-@router.get("/stats", response_model=OwnerStatsResponse, dependencies=[Depends(verify_owner_role)])
+@router.get("/stats", response_model=OwnerStatsResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def get_owner_stats(
     session: AsyncSession = Depends(get_session),
 ) -> OwnerStatsResponse:
@@ -110,7 +167,7 @@ async def get_owner_stats(
     return OwnerStatsResponse(**stats)
 
 
-@router.get("/managers", response_model=list[StaffMemberResponse], dependencies=[Depends(verify_owner_role)])
+@router.get("/managers", response_model=list[StaffMemberResponse], dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def list_managers(
     session: AsyncSession = Depends(get_session),
 ) -> list[StaffMemberResponse]:
@@ -157,7 +214,7 @@ async def list_managers(
     return response
 
 
-@router.get("/users", response_model=list[BotUserResponse], dependencies=[Depends(verify_owner_role)])
+@router.get("/users", response_model=list[BotUserResponse], dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def list_bot_users(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -181,7 +238,7 @@ async def list_bot_users(
     ]
 
 
-@router.post("/managers/{telegram_user_id}/promote", response_model=StaffMemberResponse, dependencies=[Depends(verify_owner_role)])
+@router.post("/managers/{telegram_user_id}/promote", response_model=StaffMemberResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def promote_manager(
     telegram_user_id: int,
     req: PromoteManagerRequest,
@@ -199,10 +256,16 @@ async def promote_manager(
         )
 
     actor_id = current_user_session["telegram_user_id"]
+    actor_role = current_user_session["role"]
     
     # Check if they already exist in staff_members
     stmt = select(StaffMember).where(StaffMember.telegram_user_id == telegram_user_id)
     staff = await session.scalar(stmt)
+    if staff and staff.role == StaffRole.CO_OWNER.value and actor_role != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the root owner can change co-owner role assignments.",
+        )
     
     if staff:
         staff.status = StaffStatus.ACTIVE.value
@@ -223,40 +286,13 @@ async def promote_manager(
         
     await session.commit()
     await session.refresh(staff)
-    
-    # Fetch user details for the response
-    user_stmt = select(User).where(User.telegram_user_id == telegram_user_id)
-    user = await session.scalar(user_stmt)
-    
-    username = user.username if user else None
-    first_name = user.first_name if user else None
-    last_name = user.last_name if user else None
-    display_name = ""
-    if user:
-        parts = [p for p in (user.first_name, user.last_name) if p]
-        display_name = " ".join(parts) if parts else (user.username or f"User {user.telegram_user_id}")
-    else:
-        display_name = f"Telegram ID {staff.telegram_user_id}"
-        
-    return StaffMemberResponse(
-        id=staff.id,
-        telegram_user_id=staff.telegram_user_id,
-        role=staff.role,
-        status=staff.status,
-        added_by_telegram_id=staff.added_by_telegram_id,
-        added_at=staff.added_at,
-        disabled_at=staff.disabled_at,
-        notes=staff.notes,
-        username=username,
-        first_name=first_name,
-        last_name=last_name,
-        display_name=display_name,
-    )
+    return await _staff_response(session, staff)
 
 
-@router.post("/managers/{telegram_user_id}/disable", response_model=StaffMemberResponse, dependencies=[Depends(verify_owner_role)])
+@router.post("/managers/{telegram_user_id}/disable", response_model=StaffMemberResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def disable_manager(
     telegram_user_id: int,
+    current_user_session: dict = Depends(get_current_user_session),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> StaffMemberResponse:
@@ -276,43 +312,92 @@ async def disable_manager(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Staff member not found in database",
         )
+    if staff.role == StaffRole.CO_OWNER.value and current_user_session["role"] != "owner":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the root owner can remove co-owners.",
+        )
         
     staff.status = StaffStatus.DISABLED.value
     staff.disabled_at = datetime.now(UTC)
+    await _unassign_active_tickets(session, telegram_user_id)
     await session.commit()
     await session.refresh(staff)
-    
-    # Fetch user details
-    user_stmt = select(User).where(User.telegram_user_id == telegram_user_id)
-    user = await session.scalar(user_stmt)
-    
-    username = user.username if user else None
-    first_name = user.first_name if user else None
-    last_name = user.last_name if user else None
-    display_name = ""
-    if user:
-        parts = [p for p in (user.first_name, user.last_name) if p]
-        display_name = " ".join(parts) if parts else (user.username or f"User {user.telegram_user_id}")
+    return await _staff_response(session, staff)
+
+
+@router.post("/co-owners/{telegram_user_id}/promote", response_model=StaffMemberResponse, dependencies=[Depends(verify_owner_role)])
+async def promote_co_owner(
+    telegram_user_id: int,
+    req: PromoteManagerRequest,
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> StaffMemberResponse:
+    if telegram_user_id == settings.owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The root owner is already the highest-priority owner.",
+        )
+
+    stmt = select(StaffMember).where(StaffMember.telegram_user_id == telegram_user_id)
+    staff = await session.scalar(stmt)
+    if staff:
+        staff.status = StaffStatus.ACTIVE.value
+        staff.role = StaffRole.CO_OWNER.value
+        staff.disabled_at = None
+        staff.added_by_telegram_id = current_user_session["telegram_user_id"]
+        if req.notes is not None:
+            staff.notes = req.notes
     else:
-        display_name = f"Telegram ID {staff.telegram_user_id}"
-        
-    return StaffMemberResponse(
-        id=staff.id,
-        telegram_user_id=staff.telegram_user_id,
-        role=staff.role,
-        status=staff.status,
-        added_by_telegram_id=staff.added_by_telegram_id,
-        added_at=staff.added_at,
-        disabled_at=staff.disabled_at,
-        notes=staff.notes,
-        username=username,
-        first_name=first_name,
-        last_name=last_name,
-        display_name=display_name,
-    )
+        staff = StaffMember(
+            telegram_user_id=telegram_user_id,
+            role=StaffRole.CO_OWNER.value,
+            status=StaffStatus.ACTIVE.value,
+            added_by_telegram_id=current_user_session["telegram_user_id"],
+            notes=req.notes,
+        )
+        session.add(staff)
+
+    await session.commit()
+    await session.refresh(staff)
+    return await _staff_response(session, staff)
 
 
-@router.get("/managers/{telegram_user_id}/stats", response_model=ManagerStatsResponse, dependencies=[Depends(verify_owner_role)])
+@router.post("/co-owners/{telegram_user_id}/disable", response_model=StaffMemberResponse, dependencies=[Depends(verify_owner_role)])
+async def disable_co_owner(
+    telegram_user_id: int,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> StaffMemberResponse:
+    if telegram_user_id == settings.owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The root owner cannot be disabled or demoted.",
+        )
+
+    stmt = select(StaffMember).where(StaffMember.telegram_user_id == telegram_user_id)
+    staff = await session.scalar(stmt)
+    if not staff:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Staff member not found in database",
+        )
+    if staff.role != StaffRole.CO_OWNER.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Target user is not a co-owner.",
+        )
+
+    staff.status = StaffStatus.DISABLED.value
+    staff.disabled_at = datetime.now(UTC)
+    await _unassign_active_tickets(session, telegram_user_id)
+    await session.commit()
+    await session.refresh(staff)
+    return await _staff_response(session, staff)
+
+
+@router.get("/managers/{telegram_user_id}/stats", response_model=ManagerStatsResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def get_manager_statistics(
     telegram_user_id: int,
     session: AsyncSession = Depends(get_session),
@@ -405,7 +490,7 @@ async def switch_active_model(
         )
 
 
-@router.get("/broadcasts", response_model=list[BroadcastResponse], dependencies=[Depends(verify_owner_role)])
+@router.get("/broadcasts", response_model=list[BroadcastResponse], dependencies=[Depends(verify_owner_or_co_owner_role)])
 async def list_recent_broadcasts(
     session: AsyncSession = Depends(get_session),
     broadcast_srv = Depends(get_broadcast_service),
@@ -430,4 +515,3 @@ async def list_recent_broadcasts(
         )
         for b in broadcasts
     ]
-

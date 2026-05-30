@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { getTelegramWebApp, getMockInitData, waitForTelegramWebApp } from "../telegram/webapp";
-import { authenticateTelegram, getMe } from "../api/auth";
+import { getTelegramWebApp, getMockInitData, waitForTelegramLaunchContext } from "../telegram/webapp";
+import { authenticateTelegram, getMe, updateLanguage } from "../api/auth";
 import { type UserProfile } from "../api/auth";
 import { clearStoredToken, getStoredToken, setStoredToken, onAuthError, type ApiError } from "../api/client";
 import { createCustomerTicket } from "../api/tickets";
@@ -127,6 +127,7 @@ const ProfileView: React.FC<{
   // States for customer
   const [broadcastsEnabled, setBroadcastsEnabled] = useState(profile.broadcasts_enabled);
   const [togglingBroadcasts, setTogglingBroadcasts] = useState(false);
+  const [savingLanguage, setSavingLanguage] = useState(false);
 
   useEffect(() => {
     if (profile.role === "manager") {
@@ -135,11 +136,14 @@ const ProfileView: React.FC<{
         .then(setMgrStats)
         .catch(console.error)
         .finally(() => setLoadingMgrStats(false));
-    } else if (profile.role === "owner") {
+    } else if (profile.role === "owner" || profile.role === "co_owner") {
       setLoadingOwnerData(true);
-      Promise.all([getActiveModel(), getOwnerBroadcasts()])
+      Promise.all([
+        profile.role === "owner" ? getActiveModel() : Promise.resolve(null),
+        getOwnerBroadcasts(),
+      ])
         .then(([modelData, broadcastData]) => {
-          setModelInfo(modelData);
+          if (modelData) setModelInfo(modelData);
           setBroadcasts(broadcastData);
         })
         .catch(console.error)
@@ -171,6 +175,26 @@ const ProfileView: React.FC<{
       alert("Не удалось изменить настройки рассылок");
     } finally {
       setTogglingBroadcasts(false);
+    }
+  };
+
+  const handleLanguageChange = async (language: "ru" | "en" | "ky") => {
+    if (savingLanguage) return;
+    setSavingLanguage(true);
+    try {
+      const savedLanguage = await updateLanguage(language);
+      if (setProfile) {
+        setProfile(prev => {
+          const next = prev ? { ...prev, preferred_language: savedLanguage } : prev;
+          if (next) localStorage.setItem("tma_user_profile", JSON.stringify(next));
+          return next;
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      alert((e as ApiError).message || "Failed to update language.");
+    } finally {
+      setSavingLanguage(false);
     }
   };
 
@@ -251,6 +275,50 @@ const ProfileView: React.FC<{
             <span style={{ fontWeight: 700, color: "hsl(var(--warning-hsl))" }}>Mock Demo</span>
           </div>
         )}
+      </div>
+
+      <div
+        style={{
+          backgroundColor: "hsl(var(--card-bg-hsl))",
+          border: "1px solid hsl(var(--border-hsl))",
+          borderRadius: "8px",
+          padding: "12px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+        }}
+      >
+        <span style={{ color: "hsl(var(--text-hint-hsl))", fontSize: "12px", fontWeight: 700 }}>
+          Language
+        </span>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+          {([
+            ["ru", "RU"],
+            ["en", "EN"],
+            ["ky", "KY"],
+          ] as const).map(([code, label]) => {
+            const active = (profile.preferred_language || "ru") === code;
+            return (
+              <button
+                key={code}
+                onClick={() => handleLanguageChange(code)}
+                disabled={savingLanguage}
+                style={{
+                  padding: "9px 0",
+                  borderRadius: "8px",
+                  border: active ? "1px solid hsl(var(--accent-hsl))" : "1px solid hsl(var(--border-hsl))",
+                  backgroundColor: active ? "rgba(82, 136, 193, 0.16)" : "rgba(255,255,255,0.03)",
+                  color: active ? "hsl(var(--accent-hsl))" : "#fff",
+                  fontWeight: 700,
+                  fontSize: "12px",
+                  cursor: savingLanguage ? "wait" : "pointer",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Customer controls */}
@@ -364,7 +432,7 @@ const ProfileView: React.FC<{
       )}
 
       {/* Owner controls */}
-      {profile.role === "owner" && (
+      {(profile.role === "owner" || profile.role === "co_owner") && (
         <>
           {/* Shortcuts */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
@@ -411,7 +479,7 @@ const ProfileView: React.FC<{
           </div>
 
           {/* AI Settings */}
-          <div
+          {profile.role === "owner" && <div
             style={{
               backgroundColor: "hsl(var(--card-bg-hsl))",
               border: "1px solid hsl(var(--border-hsl))",
@@ -467,7 +535,7 @@ const ProfileView: React.FC<{
             ) : (
               <span style={{ fontSize: "12px", color: "hsl(var(--error-hsl))" }}>Не удалось загрузить настройки AI</span>
             )}
-          </div>
+          </div>}
 
           {/* Broadcasts History */}
           <div
@@ -606,7 +674,7 @@ export const App: React.FC = () => {
         setCurrentTab("chats");
       } else if (profile.role === "manager") {
         setCurrentTab("active");
-      } else if (profile.role === "owner") {
+      } else if (profile.role === "owner" || profile.role === "co_owner") {
         setCurrentTab("overview");
       }
     }
@@ -677,11 +745,17 @@ export const App: React.FC = () => {
     }
   };
 
-  const initializeApp = async () => {
+  const initializeApp = async (forceFreshAuth = false) => {
     setError(null);
+    if (forceFreshAuth) {
+      clearStoredToken();
+      localStorage.removeItem("tma_user_profile");
+      setProfile(null);
+      setIsMockActive(false);
+    }
 
     // Read cached profile to determine if we can bypass full-screen loading
-    const storedToken = getStoredToken();
+    const storedToken = forceFreshAuth ? null : getStoredToken();
     const cachedProfileStr = localStorage.getItem("tma_user_profile");
     let cachedProfile: UserProfile | null = null;
     if (cachedProfileStr) {
@@ -699,20 +773,11 @@ export const App: React.FC = () => {
       setLoading(true);
     }
 
-    // Wait for Telegram WebApp
-    const webApp = await waitForTelegramWebApp(1000);
-    if (webApp) {
-      try {
-        webApp.ready();
-        webApp.expand();
-      } catch (e) {
-        console.warn("Failed to initialize Telegram WebApp SDK:", e);
-      }
-    }
+    // Wait for Telegram WebApp and initData with mobile-safe backoff.
+    const { webApp, initData } = await waitForTelegramLaunchContext();
 
     const hasTg = typeof window !== "undefined" && !!window.Telegram;
     const hasWebApp = !!webApp;
-    const initData = webApp?.initData || "";
     const initDataLen = initData.length;
     const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
@@ -730,6 +795,7 @@ export const App: React.FC = () => {
 
     if (initData) {
       // Always authenticate using initData if available
+      clearStoredToken();
       await handleAuthentication(initData, false);
     } else if (storedToken) {
       // Fetch fresh profile using existing token
@@ -810,7 +876,7 @@ export const App: React.FC = () => {
     }
   }, [currentTab]);
 
-  const handleSelectMockRole = async (role: "customer" | "manager" | "owner") => {
+  const handleSelectMockRole = async (role: "customer" | "manager" | "owner" | "co_owner") => {
     const mockInitData = getMockInitData(role);
     // Local mock tokens will contain '.mock_' for detection
     await handleAuthentication(mockInitData, true);
@@ -832,7 +898,7 @@ export const App: React.FC = () => {
     return (
       <LoadingPage
         error={error}
-        onRetry={initializeApp}
+        onRetry={() => initializeApp(true)}
         isDev={isDev && !getTelegramWebApp()?.initData}
         onSelectMockRole={handleSelectMockRole}
         diagnostics={diagnostics}
@@ -894,7 +960,7 @@ export const App: React.FC = () => {
             )}
           </>
         )}
-        {profile.role === "owner" && (
+        {(profile.role === "owner" || profile.role === "co_owner") && (
           <>
             {(currentTab === "overview" || currentTab === "managers" || currentTab === "stats") && (
               <OwnerDashboardPage 
@@ -1038,7 +1104,7 @@ export const App: React.FC = () => {
           </>
         )}
 
-        {profile.role === "owner" && (
+        {(profile.role === "owner" || profile.role === "co_owner") && (
           <>
             <button
               onClick={() => setCurrentTab("overview")}

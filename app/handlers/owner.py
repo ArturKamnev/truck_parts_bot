@@ -13,6 +13,7 @@ from app.db.models import OperatorSession, StaffMember, User
 from app.db.session import SessionLocal
 from app.filters.roles import IsOwner
 from app.handlers.customer import cancel_command
+from app.i18n.translator import get_button_text_set
 from app.keyboards.constants import (
     OWNER_BACK,
     OWNER_BROADCAST,
@@ -49,6 +50,16 @@ from app.utils.exceptions import AuthorizationError, TicketStateError, Unsupport
 logger = logging.getLogger(__name__)
 router = Router(name="owner")
 
+OWNER_CHOOSE_MODEL_TEXTS = set(get_button_text_set("owner.choose_model"))
+OWNER_STATS_TEXTS = set(get_button_text_set("owner.stats"))
+OWNER_TICKETS_TEXTS = set(get_button_text_set("owner.tickets"))
+OWNER_BROADCAST_TEXTS = set(get_button_text_set("owner.broadcast"))
+OWNER_BROADCAST_HISTORY_TEXTS = set(get_button_text_set("owner.broadcast_history"))
+OWNER_MANAGERS_TEXTS = set(get_button_text_set("owner.managers"))
+OWNER_PROMOTE_MANAGER_TEXTS = set(get_button_text_set("owner.promote_manager"))
+OWNER_MANAGER_STATS_TEXTS = set(get_button_text_set("owner.manager_stats"))
+OWNER_CANCEL_BACK_TEXTS = set(get_button_text_set("owner.cancel") + get_button_text_set("owner.back"))
+
 
 class IsOwnerBroadcasting(BaseFilter):
     async def __call__(
@@ -57,9 +68,11 @@ class IsOwnerBroadcasting(BaseFilter):
         authorization: AuthorizationService,
         broadcast_service: BroadcastService,
     ) -> bool:
-        if message.from_user is None or not authorization.is_owner(message.from_user.id):
+        if message.from_user is None:
             return False
         async with SessionLocal() as session:
+            if not await authorization.can_manage_staff_db(message.from_user.id, session):
+                return False
             state = await broadcast_service.active_owner_state(
                 session, owner_telegram_id=message.from_user.id
             )
@@ -72,9 +85,11 @@ class IsOwnerAwaitingManagerId(BaseFilter):
         message: Message,
         authorization: AuthorizationService,
     ) -> bool:
-        if message.from_user is None or not authorization.is_owner(message.from_user.id):
+        if message.from_user is None:
             return False
         async with SessionLocal() as session:
+            if not await authorization.can_manage_staff_db(message.from_user.id, session):
+                return False
             op_session = await session.get(OperatorSession, message.from_user.id)
             return op_session is not None and op_session.workflow_state == OwnerWorkflowState.AWAITING_MANAGER_ID.value
 
@@ -98,13 +113,17 @@ async def admin_panel(
         )
 
 
-@router.message(IsOwner(), F.text == OWNER_CHOOSE_MODEL, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_CHOOSE_MODEL_TEXTS), F.chat.type == "private")
 async def owner_models_text(
     message: Message,
     bot: Bot,
+    authorization: AuthorizationService,
     ui_state_service: UIStateService,
 ) -> None:
     if message.from_user is None:
+        return
+    if not authorization.is_owner(message.from_user.id):
+        await message.answer("Only the root owner can change AI model settings.")
         return
     async with SessionLocal() as session, session.begin():
         op_session = await session.get(OperatorSession, message.from_user.id)
@@ -118,7 +137,7 @@ async def owner_models_text(
         )
 
 
-@router.message(IsOwner(), F.text == OWNER_STATS, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_STATS_TEXTS), F.chat.type == "private")
 async def owner_stats_text(
     message: Message,
     bot: Bot,
@@ -135,7 +154,7 @@ async def owner_stats_text(
         )
 
 
-@router.message(IsOwner(), F.text == OWNER_TICKETS, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_TICKETS_TEXTS), F.chat.type == "private")
 async def owner_tickets_text(
     message: Message,
     bot: Bot,
@@ -173,7 +192,7 @@ async def owner_tickets_text(
         )
 
 
-@router.message(IsOwner(), F.text == OWNER_BROADCAST, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_BROADCAST_TEXTS), F.chat.type == "private")
 async def owner_broadcast_text(
     message: Message,
     bot: Bot,
@@ -190,7 +209,7 @@ async def owner_broadcast_text(
         )
 
 
-@router.message(IsOwner(), F.text == OWNER_BROADCAST_HISTORY, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_BROADCAST_HISTORY_TEXTS), F.chat.type == "private")
 async def owner_broadcast_history_text(
     message: Message,
     bot: Bot,
@@ -228,7 +247,7 @@ async def owner_broadcast_history_text(
         )
 
 
-@router.message(IsOwner(), F.text.in_({OWNER_CANCEL, OWNER_BACK}), F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_CANCEL_BACK_TEXTS), F.chat.type == "private")
 async def owner_cancel_text_button(
     message: Message,
     bot: Bot,
@@ -627,7 +646,7 @@ async def broadcast_report(
     await callback.answer()
 
 
-@router.message(IsOwnerBroadcasting(), F.text == OWNER_CANCEL, F.chat.type == "private")
+@router.message(IsOwnerBroadcasting(), F.text.in_(set(get_button_text_set("owner.cancel"))), F.chat.type == "private")
 async def broadcast_cancel_message(
     message: Message,
     bot: Bot,
@@ -756,7 +775,7 @@ async def _reset_workflow_state(owner_telegram_id: int) -> None:
         if op_session:
             op_session.workflow_state = None
 
-@router.message(IsOwner(), F.text == OWNER_MANAGERS, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_MANAGERS_TEXTS), F.chat.type == "private")
 async def owner_managers_text(
     message: Message,
     bot: Bot,
@@ -834,7 +853,7 @@ async def owner_managers_list_callback(
     await owner_managers_text(dummy_msg, bot, ui_state_service)
     await callback.answer()
 
-@router.message(IsOwner(), F.text == OWNER_PROMOTE_MANAGER, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_PROMOTE_MANAGER_TEXTS), F.chat.type == "private")
 async def owner_promote_manager_text(
     message: Message,
     bot: Bot,
@@ -893,7 +912,7 @@ async def owner_capture_manager_id(
         return
         
     text = message.text.strip() if message.text else ""
-    if text in {OWNER_CANCEL, OWNER_BACK} or text.startswith("/"):
+    if text in OWNER_CANCEL_BACK_TEXTS or text.startswith("/"):
         return
         
     if not text.isdigit():
@@ -1078,7 +1097,7 @@ async def owner_promote_unknown_confirm_callback(
         )
     await callback.answer()
 
-@router.message(IsOwner(), F.text == OWNER_MANAGER_STATS, F.chat.type == "private")
+@router.message(IsOwner(), F.text.in_(OWNER_MANAGER_STATS_TEXTS), F.chat.type == "private")
 async def owner_manager_stats_text(
     message: Message,
     bot: Bot,

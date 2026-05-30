@@ -160,6 +160,19 @@ export const disableManager = async (telegramUserId: number): Promise<StaffMembe
   });
 };
 
+export const promoteCoOwner = async (telegramUserId: number, notes?: string): Promise<StaffMember> => {
+  return apiRequest<StaffMember>(`/api/owner/co-owners/${telegramUserId}/promote`, {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+};
+
+export const disableCoOwner = async (telegramUserId: number): Promise<StaffMember> => {
+  return apiRequest<StaffMember>(`/api/owner/co-owners/${telegramUserId}/disable`, {
+    method: "POST",
+  });
+};
+
 export const getManagerStats = async (telegramUserId: number): Promise<ManagerStats> => {
   return apiRequest<ManagerStats>(`/api/owner/managers/${telegramUserId}/stats`);
 };
@@ -246,7 +259,6 @@ export const switchActiveModel = async (modelId: string): Promise<string> => {
 export const getOwnerBroadcasts = async (): Promise<Broadcast[]> => {
   return apiRequest<Broadcast[]>("/api/owner/broadcasts");
 };
-
 
 
 

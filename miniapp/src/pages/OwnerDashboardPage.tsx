@@ -7,6 +7,8 @@ import {
   getOwnerUsers,
   promoteManager,
   disableManager,
+  promoteCoOwner,
+  disableCoOwner,
   getManagerStats,
   type OwnerStats,
   type Ticket,
@@ -58,11 +60,15 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
   // Get current logged in user ID from localStorage to protect demoting self/root
   const storedProfile = localStorage.getItem("tma_user_profile");
   let currentUserId: number | null = null;
+  let currentRole: string | null = null;
   if (storedProfile) {
     try {
-      currentUserId = JSON.parse(storedProfile).telegram_user_id;
+      const parsedProfile = JSON.parse(storedProfile);
+      currentUserId = parsedProfile.telegram_user_id;
+      currentRole = parsedProfile.role;
     } catch (e) {}
   }
+  const isRootOwner = currentRole === "owner";
 
   const fetchDashboardData = async () => {
     try {
@@ -145,12 +151,12 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
     }
   };
 
-  const handleDisable = async (telegramUserId: number) => {
+  const handleEnable = async (telegramUserId: number) => {
     try {
       setSubmittingId(telegramUserId);
       setError(null);
-      await disableManager(telegramUserId);
-      setConfirmDisableId(null);
+      // Enable is just promoting without modifying notes
+      await promoteManager(telegramUserId);
       // Refresh
       await fetchManagersData();
     } catch (err) {
@@ -160,13 +166,31 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
     }
   };
 
-  const handleEnable = async (telegramUserId: number) => {
+  const handlePromoteCoOwner = async (telegramUserId: number) => {
     try {
       setSubmittingId(telegramUserId);
       setError(null);
-      // Enable is just promoting without modifying notes
-      await promoteManager(telegramUserId);
-      // Refresh
+      await promoteCoOwner(telegramUserId, promoteNotes || undefined);
+      setPromoteNotes("");
+      setShowPromoteForm(null);
+      await fetchManagersData();
+    } catch (err) {
+      setError(err as ApiError);
+    } finally {
+      setSubmittingId(null);
+    }
+  };
+
+  const handleDisableStaff = async (staff: StaffMember) => {
+    try {
+      setSubmittingId(staff.telegram_user_id);
+      setError(null);
+      if (staff.role === "co_owner") {
+        await disableCoOwner(staff.telegram_user_id);
+      } else {
+        await disableManager(staff.telegram_user_id);
+      }
+      setConfirmDisableId(null);
       await fetchManagersData();
     } catch (err) {
       setError(err as ApiError);
@@ -294,7 +318,7 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
               {managers.map((m) => {
                 const mStats = managersStats[m.telegram_user_id];
                 const isSelf = currentUserId && m.telegram_user_id === currentUserId;
-                const isRoot = m.role === "owner" || isSelf;
+                const isProtected = Boolean(isSelf) || (!isRootOwner && m.role === "co_owner");
 
                 return (
                   <div
@@ -329,6 +353,20 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
                               OWNER
                             </span>
                           )}
+                          {m.role === "co_owner" && (
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                backgroundColor: "rgba(245, 158, 11, 0.15)",
+                                color: "rgb(245, 158, 11)",
+                                padding: "2px 6px",
+                                borderRadius: "10px",
+                                fontWeight: 700,
+                              }}
+                            >
+                              CO-OWNER
+                            </span>
+                          )}
                           {m.status === "disabled" && (
                             <span
                               style={{
@@ -350,14 +388,14 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
                       </div>
 
                       {/* Deactivate/Activate Actions */}
-                      {!isRoot && (
+                      {!isProtected && (
                         <div>
                           {m.status === "active" ? (
                             confirmDisableId === m.telegram_user_id ? (
                               <div style={{ display: "flex", gap: "6px" }}>
                                 <button
                                   disabled={submittingId === m.telegram_user_id}
-                                  onClick={() => handleDisable(m.telegram_user_id)}
+                                  onClick={() => handleDisableStaff(m)}
                                   style={{
                                     fontSize: "11px",
                                     fontWeight: 700,
@@ -401,7 +439,7 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
                                   cursor: "pointer",
                                 }}
                               >
-                                Deactivate
+                                {m.role === "manager" ? "Demote" : "Remove"}
                               </button>
                             )
                           ) : (
@@ -588,7 +626,7 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
                             outline: "none",
                           }}
                         />
-                        <div style={{ display: "flex", gap: "6px", alignSelf: "flex-end" }}>
+                        <div style={{ display: "flex", gap: "6px", alignSelf: "flex-end", flexWrap: "wrap" }}>
                           <button
                             disabled={submittingId === u.telegram_user_id}
                             onClick={() => handlePromote(u.telegram_user_id)}
@@ -603,8 +641,26 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
                               cursor: "pointer",
                             }}
                           >
-                            {submittingId === u.telegram_user_id ? "Saving..." : "Confirm"}
+                            {submittingId === u.telegram_user_id ? "Saving..." : "Manager"}
                           </button>
+                          {isRootOwner && (
+                            <button
+                              disabled={submittingId === u.telegram_user_id}
+                              onClick={() => handlePromoteCoOwner(u.telegram_user_id)}
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                backgroundColor: "rgb(245, 158, 11)",
+                                color: "white",
+                                border: "none",
+                                borderRadius: "var(--radius-sm)",
+                                padding: "4px 8px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              Co-owner
+                            </button>
+                          )}
                           <button
                             onClick={() => setShowPromoteForm(null)}
                             style={{

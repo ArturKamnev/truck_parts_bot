@@ -6,6 +6,7 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
+from sqlalchemy import select
 
 from app.db.models import OperatorSession, User
 from app.db.session import SessionLocal
@@ -21,6 +22,7 @@ from app.keyboards.constants import (
     CUSTOMER_CONTACT_MANAGER,
 )
 from app.keyboards.inline import customer_cancel_confirmation_keyboard
+from app.keyboards.inline import language_selection_keyboard
 from app.services.ai_service import AIService
 from app.services.ai_streaming_lock import AIStreamingLockRegistry, default_streaming_locks
 from app.services.authorization_service import AuthorizationService
@@ -58,6 +60,23 @@ for key in [
     "bot.language_btn",
 ]:
     CUSTOMER_MENU_TEXTS.update(get_button_text_set(key))
+
+LANGUAGE_BUTTON_TEXTS = set(get_button_text_set("bot.language_btn"))
+
+
+@router.message(F.text.in_(LANGUAGE_BUTTON_TEXTS), F.chat.type == "private")
+async def language_menu_button(message: Message) -> None:
+    if message.from_user is None:
+        return
+    locale = "ru"
+    async with SessionLocal() as session:
+        user = await session.scalar(select(User).where(User.telegram_user_id == message.from_user.id))
+        if user and user.preferred_language:
+            locale = user.preferred_language
+    await message.answer(
+        translate("bot.choose_language", locale),
+        reply_markup=language_selection_keyboard(),
+    )
 
 
 def _get_ui_services(
@@ -269,7 +288,7 @@ async def start(
             username=message.from_user.username,
             first_name=message.from_user.first_name,
             last_name=message.from_user.last_name,
-            language_code=message.from_user.language_code,
+            language_code=getattr(message.from_user, "language_code", None),
         )
     async with SessionLocal() as session:
         ui, _ = _get_ui_services(

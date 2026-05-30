@@ -112,7 +112,7 @@ async def get_me(
     customer_mode = current_user.mode if role == "customer" else None
     
     selected_ticket_id = None
-    if role in ("manager", "owner"):
+    if role in ("manager", "owner", "co_owner"):
         op_sess = await session.get(OperatorSession, current_user.telegram_user_id)
         if op_sess:
             selected_ticket_id = op_sess.selected_ticket_id

@@ -34,7 +34,7 @@ router = APIRouter(prefix="/manager", tags=["manager"])
 
 
 def verify_manager_or_owner_role(session_payload: dict = Depends(get_current_user_session)) -> None:
-    if session_payload["role"] not in ("manager", "owner"):
+    if session_payload["role"] not in ("manager", "owner", "co_owner"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Only managers and owners are allowed to access manager endpoints",
@@ -164,7 +164,7 @@ async def get_manager_ticket(
     """
     Returns the details of a specific ticket.
     Enforces rule: Managers can only read unclaimed OPEN tickets, or tickets assigned to themselves.
-    Owners can read any ticket.
+    Owners and co-owners can read any ticket.
     """
     role = session_payload["role"]
     stmt = select(Ticket).options(selectinload(Ticket.customer)).where(Ticket.id == ticket_id)
@@ -334,7 +334,7 @@ async def close_manager_ticket(
     except Exception:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
 
-    is_owner = session_payload["role"] == "owner"
+    is_owner = session_payload["role"] in {"owner", "co_owner"}
     is_manager = session_payload["role"] == "manager"
     
     # Enforce owner supervisor intent
@@ -447,7 +447,7 @@ async def send_manager_message(
     except Exception:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
 
-    is_owner = session_payload["role"] == "owner"
+    is_owner = session_payload["role"] in {"owner", "co_owner"}
     is_manager = session_payload["role"] == "manager"
 
     # Enforce owner supervisor intent
@@ -577,5 +577,4 @@ async def get_manager_stats(
         tickets_claimed=tickets_claimed,
         tickets_closed=tickets_closed,
     )
-
 
