@@ -1,6 +1,7 @@
 import React from "react";
 import { Calendar, ChevronRight } from "lucide-react";
 import { type Ticket } from "../api/tickets";
+import { safeDate } from "../utils/normalization";
 
 interface TicketCardProps {
   ticket: Ticket;
@@ -28,13 +29,9 @@ export const TicketCard: React.FC<TicketCardProps> = ({
     }
   };
 
-  const statusStyle = getStatusStyle(ticket.status);
-  const formattedDate = new Date(ticket.created_at).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const statusStyle = getStatusStyle(ticket.status || "UNKNOWN");
+  const formattedDate = safeDate(ticket.created_at);
+
 
   const customerName = [ticket.customer_first_name, ticket.customer_last_name]
     .filter(Boolean)

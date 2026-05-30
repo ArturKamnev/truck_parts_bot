@@ -1,6 +1,7 @@
 import { Component } from "react";
 import type { ReactNode, ErrorInfo } from "react";
 import { t } from "../i18n";
+import { compileErrorReport, copyToClipboard } from "../utils/normalization";
 
 interface Props {
   children: ReactNode;
@@ -8,12 +9,14 @@ interface Props {
   locale?: string;
   role?: string;
   hasProfile?: boolean;
+  onDidCatch?: (error: Error, errorInfo: ErrorInfo) => void;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  copied: boolean;
 }
 
 const getActiveLocale = (): string => {
@@ -31,7 +34,7 @@ const getActiveLocale = (): string => {
   
   if (typeof window !== "undefined") {
     const tgLang = window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
-    if (tgLang) {
+    if (typeof tgLang === "string") {
       const lang = tgLang.toLowerCase().slice(0, 2);
       if (["ru", "en", "ky"].includes(lang)) return lang;
       if (lang === "kg") return "ky";
@@ -58,15 +61,28 @@ export class ErrorBoundary extends Component<Props, State> {
     hasError: false,
     error: null,
     errorInfo: null,
+    copied: false,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error, errorInfo: null };
+  public static getDerivedStateFromError(error: Error): Partial<State> {
+    return { hasError: true, error };
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState({ errorInfo });
-    console.error("ErrorBoundary caught an uncaught error:", error, errorInfo);
+    if (this.props.onDidCatch) {
+      this.props.onDidCatch(error, errorInfo);
+    }
+    if (import.meta.env.DEV) {
+      console.error("[ErrorBoundary] Caught critical runtime error:", error, errorInfo);
+    }
+    try {
+      localStorage.setItem("tma_last_crash_reason", JSON.stringify({
+        message: error.message,
+        stack: errorInfo.componentStack,
+        timestamp: new Date().toISOString()
+      }));
+    } catch(e){}
   }
 
   private handleReload = () => {
@@ -77,6 +93,39 @@ export class ErrorBoundary extends Component<Props, State> {
     localStorage.removeItem("tma_session_token");
     localStorage.removeItem("tma_user_profile");
     window.location.reload();
+  };
+
+  private handleCopyReport = () => {
+    let profile = null;
+    let cachedRole = this.props.role;
+    try {
+      const cached = localStorage.getItem("tma_user_profile");
+      if (cached) {
+        profile = JSON.parse(cached);
+        if (!cachedRole) cachedRole = profile.role;
+      }
+    } catch (e) {}
+
+    const locale = this.props.locale || getActiveLocale();
+    const errorMsg = this.state.error?.message || this.state.error?.toString();
+    const reportText = compileErrorReport(
+      errorMsg,
+      window.location.pathname,
+      cachedRole,
+      locale,
+      "fatalRenderError",
+      profile,
+      null
+    );
+
+    copyToClipboard(reportText).then((ok) => {
+      if (ok) {
+        this.setState({ copied: true });
+        setTimeout(() => this.setState({ copied: false }), 2000);
+      } else {
+        alert("Failed to copy report to clipboard.");
+      }
+    });
   };
 
   public render() {
@@ -149,7 +198,7 @@ export class ErrorBoundary extends Component<Props, State> {
             >
               {t("common.reload", locale)}
             </button>
-            <button
+             <button
               onClick={this.handleRetryAuth}
               style={{
                 padding: "12px 24px",
@@ -163,6 +212,22 @@ export class ErrorBoundary extends Component<Props, State> {
               }}
             >
               {t("common.retry_auth", locale)}
+            </button>
+            <button
+              onClick={this.handleCopyReport}
+              style={{
+                padding: "12px 24px",
+                backgroundColor: "rgba(82, 136, 193, 0.15)",
+                color: "rgb(112, 172, 237)",
+                border: "1px dashed rgba(82, 136, 193, 0.3)",
+                borderRadius: "8px",
+                fontWeight: 600,
+                fontSize: "14px",
+                cursor: "pointer",
+                marginTop: "4px"
+              }}
+            >
+              {this.state.copied ? "✓ Copied!" : "📋 Copy Error Report"}
             </button>
           </div>
 

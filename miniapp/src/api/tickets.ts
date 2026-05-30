@@ -1,4 +1,11 @@
 import { apiRequest } from "./client";
+import {
+  normalizeTicket,
+  normalizeTicketMessage,
+  normalizeStaffMember,
+  normalizeBroadcast,
+  normalizeAIMessage,
+} from "../utils/normalization";
 
 export interface Ticket {
   id: number;
@@ -38,11 +45,13 @@ export interface OwnerStats {
 
 // --- Customer API ---
 export const getCustomerTickets = async (): Promise<Ticket[]> => {
-  return apiRequest<Ticket[]>("/api/customer/tickets");
+  const tickets = await apiRequest<Ticket[]>("/api/customer/tickets");
+  return (tickets || []).map(normalizeTicket);
 };
 
 export const getCustomerTicketDetails = async (ticketId: number): Promise<Ticket> => {
-  return apiRequest<Ticket>(`/api/customer/tickets/${ticketId}`);
+  const ticket = await apiRequest<Ticket>(`/api/customer/tickets/${ticketId}`);
+  return normalizeTicket(ticket);
 };
 
 export const getCustomerTicketMessages = async (
@@ -51,20 +60,24 @@ export const getCustomerTicketMessages = async (
   afterId?: number
 ): Promise<TicketMessage[]> => {
   const query = `limit=${limit}` + (afterId !== undefined ? `&after_id=${afterId}` : "");
-  return apiRequest<TicketMessage[]>(`/api/customer/tickets/${ticketId}/messages?${query}`);
+  const messages = await apiRequest<TicketMessage[]>(`/api/customer/tickets/${ticketId}/messages?${query}`);
+  return (messages || []).map(normalizeTicketMessage);
 };
 
 // --- Manager API ---
 export const getManagerNewTickets = async (): Promise<Ticket[]> => {
-  return apiRequest<Ticket[]>("/api/manager/tickets/new");
+  const tickets = await apiRequest<Ticket[]>("/api/manager/tickets/new");
+  return (tickets || []).map(normalizeTicket);
 };
 
 export const getManagerActiveTickets = async (): Promise<Ticket[]> => {
-  return apiRequest<Ticket[]>("/api/manager/tickets/active");
+  const tickets = await apiRequest<Ticket[]>("/api/manager/tickets/active");
+  return (tickets || []).map(normalizeTicket);
 };
 
 export const getManagerTicketDetails = async (ticketId: number): Promise<Ticket> => {
-  return apiRequest<Ticket>(`/api/manager/tickets/${ticketId}`);
+  const ticket = await apiRequest<Ticket>(`/api/manager/tickets/${ticketId}`);
+  return normalizeTicket(ticket);
 };
 
 export const getManagerTicketMessages = async (
@@ -73,30 +86,44 @@ export const getManagerTicketMessages = async (
   afterId?: number
 ): Promise<TicketMessage[]> => {
   const query = `limit=${limit}` + (afterId !== undefined ? `&after_id=${afterId}` : "");
-  return apiRequest<TicketMessage[]>(`/api/manager/tickets/${ticketId}/messages?${query}`);
+  const messages = await apiRequest<TicketMessage[]>(`/api/manager/tickets/${ticketId}/messages?${query}`);
+  return (messages || []).map(normalizeTicketMessage);
 };
 
 // --- Owner API ---
 export const getOwnerTickets = async (): Promise<Ticket[]> => {
-  return apiRequest<Ticket[]>("/api/owner/tickets");
+  const tickets = await apiRequest<Ticket[]>("/api/owner/tickets");
+  return (tickets || []).map(normalizeTicket);
 };
 
 export const getOwnerStats = async (): Promise<OwnerStats> => {
-  return apiRequest<OwnerStats>("/api/owner/stats");
+  const stats = await apiRequest<OwnerStats>("/api/owner/stats");
+  return {
+    total_customers: Number(stats?.total_customers) || 0,
+    new_customers_today: Number(stats?.new_customers_today) || 0,
+    total_ai_messages: Number(stats?.total_ai_messages) || 0,
+    total_tickets: Number(stats?.total_tickets) || 0,
+    open_tickets: Number(stats?.open_tickets) || 0,
+    claimed_tickets: Number(stats?.claimed_tickets) || 0,
+    closed_tickets: Number(stats?.closed_tickets) || 0,
+    avg_first_claim_seconds: stats?.avg_first_claim_seconds !== undefined && stats?.avg_first_claim_seconds !== null ? Number(stats.avg_first_claim_seconds) : null,
+  };
 };
 
 // --- Interactive Manager / Owner Actions ---
 export const claimTicket = async (ticketId: number): Promise<Ticket> => {
-  return apiRequest<Ticket>(`/api/manager/tickets/${ticketId}/claim`, {
+  const ticket = await apiRequest<Ticket>(`/api/manager/tickets/${ticketId}/claim`, {
     method: "POST",
   });
+  return normalizeTicket(ticket);
 };
 
 export const closeTicket = async (ticketId: number, asSupervisor: boolean = false): Promise<Ticket> => {
-  return apiRequest<Ticket>(`/api/manager/tickets/${ticketId}/close`, {
+  const ticket = await apiRequest<Ticket>(`/api/manager/tickets/${ticketId}/close`, {
     method: "POST",
     body: JSON.stringify({ asSupervisor }),
   });
+  return normalizeTicket(ticket);
 };
 
 export const sendTicketMessage = async (
@@ -104,10 +131,11 @@ export const sendTicketMessage = async (
   text: string,
   asSupervisor: boolean = false
 ): Promise<TicketMessage> => {
-  return apiRequest<TicketMessage>(`/api/manager/tickets/${ticketId}/messages`, {
+  const message = await apiRequest<TicketMessage>(`/api/manager/tickets/${ticketId}/messages`, {
     method: "POST",
     body: JSON.stringify({ text, asSupervisor }),
   });
+  return normalizeTicketMessage(message);
 };
 
 export interface StaffMember {
@@ -140,60 +168,80 @@ export interface ManagerStats {
 }
 
 export const getOwnerManagers = async (): Promise<StaffMember[]> => {
-  return apiRequest<StaffMember[]>("/api/owner/managers");
+  const managers = await apiRequest<StaffMember[]>("/api/owner/managers");
+  return (managers || []).map(normalizeStaffMember);
 };
 
 export const getOwnerUsers = async (): Promise<BotUser[]> => {
-  return apiRequest<BotUser[]>("/api/owner/users");
+  const users = await apiRequest<BotUser[]>("/api/owner/users");
+  return (users || []).map((u) => ({
+    id: Number(u?.id) || 0,
+    telegram_user_id: Number(u?.telegram_user_id) || 0,
+    username: typeof u?.username === "string" ? u.username : null,
+    first_name: typeof u?.first_name === "string" ? u.first_name : null,
+    last_name: typeof u?.last_name === "string" ? u.last_name : null,
+  }));
 };
 
 export const promoteManager = async (telegramUserId: number, notes?: string): Promise<StaffMember> => {
-  return apiRequest<StaffMember>(`/api/owner/managers/${telegramUserId}/promote`, {
+  const manager = await apiRequest<StaffMember>(`/api/owner/managers/${telegramUserId}/promote`, {
     method: "POST",
     body: JSON.stringify({ notes }),
   });
+  return normalizeStaffMember(manager);
 };
 
 export const disableManager = async (telegramUserId: number): Promise<StaffMember> => {
-  return apiRequest<StaffMember>(`/api/owner/managers/${telegramUserId}/disable`, {
+  const manager = await apiRequest<StaffMember>(`/api/owner/managers/${telegramUserId}/disable`, {
     method: "POST",
   });
+  return normalizeStaffMember(manager);
 };
 
 export const promoteCoOwner = async (telegramUserId: number, notes?: string): Promise<StaffMember> => {
-  return apiRequest<StaffMember>(`/api/owner/co-owners/${telegramUserId}/promote`, {
+  const coOwner = await apiRequest<StaffMember>(`/api/owner/co-owners/${telegramUserId}/promote`, {
     method: "POST",
     body: JSON.stringify({ notes }),
   });
+  return normalizeStaffMember(coOwner);
 };
 
 export const disableCoOwner = async (telegramUserId: number): Promise<StaffMember> => {
-  return apiRequest<StaffMember>(`/api/owner/co-owners/${telegramUserId}/disable`, {
+  const coOwner = await apiRequest<StaffMember>(`/api/owner/co-owners/${telegramUserId}/disable`, {
     method: "POST",
   });
+  return normalizeStaffMember(coOwner);
 };
 
 export const getManagerStats = async (telegramUserId: number): Promise<ManagerStats> => {
-  return apiRequest<ManagerStats>(`/api/owner/managers/${telegramUserId}/stats`);
+  const stats = await apiRequest<ManagerStats>(`/api/owner/managers/${telegramUserId}/stats`);
+  return {
+    telegram_user_id: Number(stats?.telegram_user_id) || 0,
+    tickets_claimed: Number(stats?.tickets_claimed) || 0,
+    tickets_closed: Number(stats?.tickets_closed) || 0,
+  };
 };
 
 // --- CRM Expansion & AI Endpoints ---
 export const createCustomerTicket = async (initialMessage: string): Promise<Ticket> => {
-  return apiRequest<Ticket>("/api/customer/tickets", {
+  const ticket = await apiRequest<Ticket>("/api/customer/tickets", {
     method: "POST",
     body: JSON.stringify({ initialMessage }),
   });
+  return normalizeTicket(ticket);
 };
 
 export const sendCustomerMessage = async (ticketId: number, text: string): Promise<TicketMessage> => {
-  return apiRequest<TicketMessage>(`/api/customer/tickets/${ticketId}/messages`, {
+  const message = await apiRequest<TicketMessage>(`/api/customer/tickets/${ticketId}/messages`, {
     method: "POST",
     body: JSON.stringify({ text }),
   });
+  return normalizeTicketMessage(message);
 };
 
 export const getManagerClosedTickets = async (): Promise<Ticket[]> => {
-  return apiRequest<Ticket[]>("/api/manager/tickets/closed");
+  const tickets = await apiRequest<Ticket[]>("/api/manager/tickets/closed");
+  return (tickets || []).map(normalizeTicket);
 };
 
 export interface AIMessage {
@@ -212,7 +260,8 @@ export const sendAIChatMessage = async (message: string): Promise<{ response: st
 };
 
 export const getAIChatHistory = async (): Promise<AIMessage[]> => {
-  return apiRequest<AIMessage[]>("/api/ai/history");
+  const history = await apiRequest<AIMessage[]>("/api/ai/history");
+  return (history || []).map(normalizeAIMessage);
 };
 
 export interface Broadcast {
@@ -242,7 +291,11 @@ export const toggleBroadcastSettings = async (enabled: boolean): Promise<boolean
 };
 
 export const getManagerPersonalStats = async (): Promise<{ tickets_claimed: number; tickets_closed: number }> => {
-  return apiRequest<{ tickets_claimed: number; tickets_closed: number }>("/api/manager/stats");
+  const stats = await apiRequest<{ tickets_claimed: number; tickets_closed: number }>("/api/manager/stats");
+  return {
+    tickets_claimed: Number(stats?.tickets_claimed) || 0,
+    tickets_closed: Number(stats?.tickets_closed) || 0,
+  };
 };
 
 export const getActiveModel = async (): Promise<ActiveModelInfo> => {
@@ -257,8 +310,10 @@ export const switchActiveModel = async (modelId: string): Promise<string> => {
 };
 
 export const getOwnerBroadcasts = async (): Promise<Broadcast[]> => {
-  return apiRequest<Broadcast[]>("/api/owner/broadcasts");
+  const broadcasts = await apiRequest<Broadcast[]>("/api/owner/broadcasts");
+  return (broadcasts || []).map(normalizeBroadcast);
 };
+
 
 
 

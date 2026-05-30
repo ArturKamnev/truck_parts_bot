@@ -1,6 +1,7 @@
 import React from "react";
 import { Image, Volume2, Video, FileText } from "lucide-react";
 import { type TicketMessage } from "../api/tickets";
+import { safeTime } from "../utils/normalization";
 
 interface ChatBubbleProps {
   message: TicketMessage;
@@ -34,10 +35,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
     }
   };
 
-  const formattedTime = new Date(message.createdAt).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const formattedTime = safeTime(message.createdAt);
 
   if (isSystem) {
     return (

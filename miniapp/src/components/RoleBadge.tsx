@@ -1,4 +1,5 @@
 import React from "react";
+import { safeUpperCase } from "../utils/normalization";
 
 interface RoleBadgeProps {
   role: "customer" | "manager" | "owner" | string;
@@ -28,11 +29,12 @@ export const RoleBadge: React.FC<RoleBadgeProps> = ({ role }) => {
     },
   };
 
-  const current = styles[role] || {
+  const current = styles[role || ""] || {
     bg: "rgba(112, 132, 153, 0.15)",
     text: "rgb(152, 172, 193)",
-    label: role.toUpperCase(),
+    label: safeUpperCase(role, "UNKNOWN"),
   };
+
 
   return (
     <span

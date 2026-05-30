@@ -4,6 +4,13 @@ import { CustomerHomePage } from "./CustomerHomePage";
 import { ManagerDashboardPage } from "./ManagerDashboardPage";
 import { OwnerDashboardPage } from "./OwnerDashboardPage";
 import { t } from "../i18n";
+import {
+  normalizeUserProfile,
+  normalizeTicket,
+  normalizeTicketMessage,
+  safeTime,
+  getInitials,
+} from "../utils/normalization";
 
 const BuggyComponent: React.FC<{ shouldCrash: boolean }> = ({ shouldCrash }) => {
   if (shouldCrash) {
@@ -22,9 +29,19 @@ export const SelfTestPage: React.FC = () => {
     { name: "Invalid Cached Profile Resilience", status: "RUNNING", details: "Waiting..." },
     { name: "ErrorBoundary Crash Catching", status: "RUNNING", details: "Waiting..." },
     { name: "Language Translation Resolution", status: "RUNNING", details: "Waiting..." },
+    { name: "UserProfile Normalization", status: "RUNNING", details: "Waiting..." },
+    { name: "Ticket Normalization", status: "RUNNING", details: "Waiting..." },
+    { name: "Message Normalization & Date Fallback", status: "RUNNING", details: "Waiting..." },
+    { name: "charAt Crash Prevention", status: "RUNNING", details: "Waiting..." },
   ]);
 
   const [shouldCrash, setShouldCrash] = useState(false);
+
+  const updateTestResult = (name: string, status: "PASS" | "FAIL", details: string) => {
+    setResults((prev) =>
+      prev.map((r) => (r.name === name ? { ...r, status, details } : r))
+    );
+  };
 
   useEffect(() => {
     const runTests = async () => {
@@ -46,7 +63,6 @@ export const SelfTestPage: React.FC = () => {
       // 6. Invalid Cached Profile JSON Resilience
       try {
         localStorage.setItem("tma_user_profile", "{invalid-json-value}");
-        // Call the parser block logic
         const cached = localStorage.getItem("tma_user_profile");
         if (cached) {
           JSON.parse(cached);
@@ -61,7 +77,7 @@ export const SelfTestPage: React.FC = () => {
       // We will trigger a crash inside a wrapped component
       setTimeout(() => {
         setShouldCrash(true);
-      }, 500);
+      }, 200);
 
       // 8. Language Translation Resolution
       const translationResult = t("profile.role", "en");
@@ -70,18 +86,101 @@ export const SelfTestPage: React.FC = () => {
       } else {
         updateTestResult("Language Translation Resolution", "FAIL", `Language translation failed. Expected 'Role', got '${translationResult}'`);
       }
+
+      // 9. Boundary Normalization Tests
+      // Test UserProfile Normalization (missing display_name, username, preferred_language, unknown role)
+      try {
+        const rawProfile = {
+          telegram_user_id: 12345,
+          role: "super_admin",
+          first_name: "John",
+        };
+        const normalized = normalizeUserProfile(rawProfile);
+        
+        if ((normalized.role as string) !== "unsupportedRole") {
+          throw new Error(`Expected role 'unsupportedRole', got '${normalized.role}'`);
+        }
+        if (normalized.preferred_language !== "ru") {
+          throw new Error(`Expected default language 'ru', got '${normalized.preferred_language}'`);
+        }
+        if (normalized.display_name !== "John") {
+          throw new Error(`Expected display name 'John' (first_name fallback), got '${normalized.display_name}'`);
+        }
+        
+        updateTestResult("UserProfile Normalization", "PASS", "UserProfile normalized safely with fallback role, language, and display name.");
+      } catch (e: any) {
+        updateTestResult("UserProfile Normalization", "FAIL", `UserProfile normalization failed: ${e.message}`);
+      }
+
+      // 10. Ticket Normalization (missing status, created_at)
+      try {
+        const rawTicket = {
+          id: 42,
+        };
+        const normalized = normalizeTicket(rawTicket);
+        if (normalized.status !== "UNKNOWN") {
+          throw new Error(`Expected status 'UNKNOWN', got '${normalized.status}'`);
+        }
+        if (!normalized.created_at) {
+          throw new Error("Expected fallback ISO string for created_at");
+        }
+        updateTestResult("Ticket Normalization", "PASS", "Ticket normalized safely with UNKNOWN status and fallback ISO created_at date.");
+      } catch (e: any) {
+        updateTestResult("Ticket Normalization", "FAIL", `Ticket normalization failed: ${e.message}`);
+      }
+
+      // 11. Message Normalization & Date Fallback (missing senderType, invalid date string)
+      try {
+        const rawMsg = {
+          id: 101,
+          senderType: undefined,
+          createdAt: "invalid-date-string"
+        };
+        const normalized = normalizeTicketMessage(rawMsg);
+        if (normalized.senderType !== "UNKNOWN") {
+          throw new Error(`Expected senderType 'UNKNOWN', got '${normalized.senderType}'`);
+        }
+        const formatted = safeTime(normalized.createdAt);
+        if (formatted !== "—") {
+          throw new Error(`Expected invalid date safeTime fallback '—', got '${formatted}'`);
+        }
+        updateTestResult("Message Normalization & Date Fallback", "PASS", "Message senderType fell back to UNKNOWN and safeTime handled invalid date string successfully.");
+      } catch (e: any) {
+        updateTestResult("Message Normalization & Date Fallback", "FAIL", `Message normalization/date check failed: ${e.message}`);
+      }
+
+      // 12. charAt Crash Prevention (empty profile fields initials extraction)
+      try {
+        const rawProfile = {
+          telegram_user_id: 999
+        };
+        const normalized = normalizeUserProfile(rawProfile);
+        const initials = getInitials(normalized.display_name);
+        if (initials !== "U") {
+          throw new Error(`Expected initials fallback 'U', got '${initials}'`);
+        }
+        updateTestResult("charAt Crash Prevention", "PASS", "Initials helper resolved undefined profile fields and returned 'U' initials fallback safely.");
+      } catch (e: any) {
+        updateTestResult("charAt Crash Prevention", "FAIL", `charAt check failed: ${e.message}`);
+      }
     };
 
     runTests();
+
+    // Safety timeout to ensure no test stays stuck in RUNNING
+    const timeout = setTimeout(() => {
+      setResults((prev) =>
+        prev.map((r) =>
+          r.status === "RUNNING"
+            ? { ...r, status: "FAIL", details: "Timeout: Test hung or execution timed out." }
+            : r
+        )
+      );
+    }, 2500);
+
+    return () => clearTimeout(timeout);
   }, []);
 
-  const updateTestResult = (name: string, status: "PASS" | "FAIL", details: string) => {
-    setResults((prev) =>
-      prev.map((r) => (r.name === name ? { ...r, status, details } : r))
-    );
-  };
-
-  // We catch error in ErrorBoundary wrapping BuggyComponent
   const handleBoundaryCatch = () => {
     updateTestResult("ErrorBoundary Crash Catching", "PASS", "ErrorBoundary successfully caught the child component render exception and prevented blank screen.");
   };
@@ -113,14 +212,12 @@ export const SelfTestPage: React.FC = () => {
         ))}
       </div>
 
-      {/* Hidden test rendering for dashboards to check if they crash */}
       <div style={{ display: "none" }}>
         <CustomerHomePage onSelectTicket={() => {}} />
         <ManagerDashboardPage onSelectTicket={() => {}} activeTab="new" setActiveTab={() => {}} />
         <OwnerDashboardPage onSelectTicket={() => {}} activeTab="dashboard" setActiveTab={() => {}} />
       </div>
 
-      {/* ErrorBoundary verification zone */}
       <div style={{ marginTop: "20px", padding: "12px", border: "1px dashed #2e3b52", borderRadius: "6px" }}>
         <h4 style={{ margin: "0 0 10px 0", color: "#a0aec0" }}>ErrorBoundary Capture Zone</h4>
         <ErrorBoundary
@@ -128,13 +225,9 @@ export const SelfTestPage: React.FC = () => {
           locale="ru"
           hasProfile={true}
           apiBaseUrl="http://localhost:8000"
+          onDidCatch={handleBoundaryCatch}
         >
           <BuggyComponent shouldCrash={shouldCrash} />
-          {shouldCrash && (
-            <div style={{ color: "#2ecc71", fontSize: "12px", marginTop: "10px" }} ref={() => handleBoundaryCatch()}>
-              [System Note] Error boundary caught event.
-            </div>
-          )}
         </ErrorBoundary>
       </div>
     </div>

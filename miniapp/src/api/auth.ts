@@ -1,4 +1,5 @@
 import { apiRequest } from "./client";
+import { normalizeUserProfile } from "../utils/normalization";
 
 export interface UserProfile {
   telegram_user_id: number;
@@ -24,14 +25,19 @@ export interface AuthResponse {
 }
 
 export const authenticateTelegram = async (initData: string): Promise<AuthResponse> => {
-  return apiRequest<AuthResponse>("/api/auth/telegram", {
+  const res = await apiRequest<AuthResponse>("/api/auth/telegram", {
     method: "POST",
     body: JSON.stringify({ initData }),
   });
+  return {
+    token: res.token,
+    profile: normalizeUserProfile(res.profile),
+  };
 };
 
 export const getMe = async (): Promise<UserProfile> => {
-  return apiRequest<UserProfile>("/api/me");
+  const profile = await apiRequest<UserProfile>("/api/me");
+  return normalizeUserProfile(profile);
 };
 
 export const updateLanguage = async (language: "ru" | "en" | "ky"): Promise<string> => {
@@ -40,3 +46,4 @@ export const updateLanguage = async (language: "ru" | "en" | "ky"): Promise<stri
     body: JSON.stringify({ language }),
   });
 };
+

@@ -212,11 +212,11 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
     if (isActiveManager) return false;
 
     if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    const username = u.username?.toLowerCase() || "";
-    const firstName = u.first_name?.toLowerCase() || "";
-    const lastName = u.last_name?.toLowerCase() || "";
-    const idStr = String(u.telegram_user_id);
+    const q = typeof searchQuery === "string" ? searchQuery.toLowerCase() : "";
+    const username = typeof u.username === "string" ? u.username.toLowerCase() : "";
+    const firstName = typeof u.first_name === "string" ? u.first_name.toLowerCase() : "";
+    const lastName = typeof u.last_name === "string" ? u.last_name.toLowerCase() : "";
+    const idStr = String(u.telegram_user_id || "");
     
     return (
       username.includes(q) ||

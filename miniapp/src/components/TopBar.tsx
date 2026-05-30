@@ -2,6 +2,7 @@ import React from "react";
 import { LogOut } from "lucide-react";
 import { type UserProfile } from "../api/auth";
 import { RoleBadge } from "./RoleBadge";
+import { getInitials } from "../utils/normalization";
 
 interface TopBarProps {
   profile: UserProfile;
@@ -10,6 +11,10 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ profile, isMockActive, onLogout }) => {
+  const displayName = profile.display_name;
+  const initial = getInitials(displayName);
+
+
   return (
     <header
       style={{
@@ -37,11 +42,11 @@ export const TopBar: React.FC<TopBarProps> = ({ profile, isMockActive, onLogout 
             fontSize: "14px",
           }}
         >
-          {profile.display_name.charAt(0).toUpperCase()}
+          {initial}
         </div>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "14px", fontWeight: 600 }}>{profile.display_name}</span>
+            <span style={{ fontSize: "14px", fontWeight: 600 }}>{displayName}</span>
             <RoleBadge role={profile.role} />
           </div>
           {profile.username && (

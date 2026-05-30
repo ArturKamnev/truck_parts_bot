@@ -9,7 +9,8 @@ const locales: Record<string, Record<string, string>> = {
 };
 
 export const t = (key: string, locale: string | null | undefined): string => {
-  const lang = (locale || "ru").toLowerCase().slice(0, 2);
+  const locStr = typeof locale === "string" ? locale : "ru";
+  const lang = locStr.toLowerCase().slice(0, 2);
   const activeLocale = locales[lang] ? lang : "ru";
   
   const dict = locales[activeLocale];

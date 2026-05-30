@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { Send, Sparkles, RefreshCw, AlertTriangle } from "lucide-react";
 import { getAIChatHistory, sendAIChatMessage, type AIMessage } from "../api/tickets";
 import { type ApiError } from "../api/client";
+import { safeTime } from "../utils/normalization";
 
 interface AIChatPageProps {}
 
@@ -213,10 +214,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = () => {
           <>
             {messages.map((msg) => {
               const isOutgoing = msg.role === "user";
-              const formattedTime = new Date(msg.created_at).toLocaleTimeString(undefined, {
-                hour: "2-digit",
-                minute: "2-digit",
-              });
+              const formattedTime = safeTime(msg.created_at);
 
               return (
                 <div

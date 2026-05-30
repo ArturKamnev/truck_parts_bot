@@ -7,6 +7,7 @@ import { createCustomerTicket } from "../api/tickets";
 import { MessageSquare, PlusCircle, Sparkles, User, Inbox, CheckCircle2, Users, BarChart3, MoreHorizontal, Radio, Cpu, ExternalLink } from "lucide-react";
 import { t } from "../i18n";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { getInitials } from "../utils/normalization";
 
 
 // Import Pages & Shell Components
@@ -124,7 +125,8 @@ const ProfileView: React.FC<{
   setProfile?: React.Dispatch<React.SetStateAction<UserProfile | null>>;
   refreshProfile?: () => Promise<void>;
 }> = ({ profile, onLogout, isMockActive, setCurrentTab, setProfile, refreshProfile }) => {
-  const displayName = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || profile.username || `User ${profile.telegram_user_id}`;
+  const displayName = profile.display_name;
+  const initial = getInitials(displayName);
   const lang = profile.preferred_language || "ru";
 
   // States for manager
@@ -259,7 +261,7 @@ const ProfileView: React.FC<{
             margin: "0 auto 8px auto",
           }}
         >
-          {displayName.charAt(0).toUpperCase()}
+          {initial}
         </div>
         <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", margin: "0 0 2px 0" }}>{displayName}</h3>
         <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>@{profile.username || "no_username"}</span>

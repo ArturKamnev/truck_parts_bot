@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { RotateCcw, Shield, Lock, WifiOff, AlertTriangle } from "lucide-react";
 import { type ApiError } from "../api/client";
 import { t } from "../i18n";
+import { compileErrorReport, copyToClipboard } from "../utils/normalization";
 
 export interface DiagnosticsData {
   apiBaseUrl: string;
@@ -52,7 +53,7 @@ const getActiveLocale = (): string => {
   
   if (typeof window !== "undefined") {
     const tgLang = window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code;
-    if (tgLang) {
+    if (typeof tgLang === "string") {
       const lang = tgLang.toLowerCase().slice(0, 2);
       if (["ru", "en", "ky"].includes(lang)) return lang;
       if (lang === "kg") return "ky";
@@ -63,13 +64,10 @@ const getActiveLocale = (): string => {
 
 const sanitizeMessage = (msg: string | undefined | null): string => {
   if (!msg) return "";
-  // Strip JWTs
   let clean = msg.replace(/eyJ[a-zA-Z0-9-_=]+\.[a-zA-Z0-9-_=]+\.?[a-zA-Z0-9-_.+/=]*/g, "[REDACTED_JWT]");
-  // Strip initData url parameters
   clean = clean.replace(/initData=[^&\s]+/g, "initData=[REDACTED]");
   clean = clean.replace(/query_id=[^&\s]+/g, "query_id=[REDACTED]");
   clean = clean.replace(/hash=[^&\s]+/g, "hash=[REDACTED]");
-  // Strip authorization header values
   clean = clean.replace(/Bearer\s+[a-zA-Z0-9-_.]+/g, "Bearer [REDACTED]");
   return clean;
 };
@@ -80,8 +78,39 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
   isDev,
   onSelectMockRole,
   diagnostics,
+  error,
 }) => {
   const locale = getActiveLocale();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyReport = () => {
+    let profile = null;
+    try {
+      const cached = localStorage.getItem("tma_user_profile");
+      if (cached) profile = JSON.parse(cached);
+    } catch (e) {}
+
+    const errorMsg = error?.message || error?.toString();
+    const reportText = compileErrorReport(
+      errorMsg,
+      diagnostics?.currentRoute || window.location.pathname,
+      diagnostics?.currentRole || null,
+      locale,
+      authState,
+      profile,
+      diagnostics?.errorStatus !== null && diagnostics?.errorStatus !== undefined ? Number(diagnostics?.errorStatus) : null
+    );
+
+    copyToClipboard(reportText).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        alert("Failed to copy report to clipboard.");
+      }
+    });
+  };
+
 
   // Determine view based on authState
   const isLoadingState = ["booting", "waitingTelegram", "authenticating", "loadingProfile"].includes(authState);
@@ -329,6 +358,25 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
               </button>
             </>
           )}
+          <button
+            onClick={handleCopyReport}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 20px",
+              backgroundColor: "rgba(82, 136, 193, 0.15)",
+              color: "rgb(112, 172, 237)",
+              border: "1px dashed rgba(82, 136, 193, 0.3)",
+              borderRadius: "var(--radius-md)",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+              marginTop: "16px",
+            }}
+          >
+            {copied ? "✓ Copied!" : "📋 Copy Error Report"}
+          </button>
         </div>
       )}
 
