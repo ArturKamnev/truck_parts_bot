@@ -123,8 +123,7 @@ const ProfileView: React.FC<{
   isMockActive: boolean;
   setCurrentTab?: (tab: string) => void;
   setProfile?: React.Dispatch<React.SetStateAction<UserProfile | null>>;
-  refreshProfile?: () => Promise<void>;
-}> = ({ profile, onLogout, isMockActive, setCurrentTab, setProfile, refreshProfile }) => {
+}> = ({ profile, onLogout, isMockActive, setCurrentTab, setProfile }) => {
   const displayName = profile.display_name;
   const initial = getInitials(displayName);
   const lang = profile.preferred_language || "ru";
@@ -195,9 +194,11 @@ const ProfileView: React.FC<{
 
   const handleLanguageChange = async (language: "ru" | "en" | "ky") => {
     if (savingLanguage) return;
+    const previousLanguage = profile?.preferred_language || "ru";
     setSavingLanguage(true);
     try {
       const savedLanguage = await updateLanguage(language);
+      
       if (setProfile) {
         setProfile(prev => {
           const next = prev ? { ...prev, preferred_language: savedLanguage } : prev;
@@ -205,12 +206,36 @@ const ProfileView: React.FC<{
           return next;
         });
       }
-      if (refreshProfile) {
-        await refreshProfile();
+      
+      const freshProfile = await getMe();
+      if (setProfile) {
+        setProfile(freshProfile);
+      }
+      localStorage.setItem("tma_user_profile", JSON.stringify(freshProfile));
+      const finalLanguage = freshProfile.preferred_language || "ru";
+
+      if (import.meta.env.DEV) {
+        console.log("[Language Switch Success]", {
+          selectedLanguage: language,
+          previousLanguage,
+          apiStatus: "SUCCESS",
+          returnedLanguage: finalLanguage,
+        });
       }
     } catch (e) {
-      console.error(e);
-      alert((e as ApiError).message || "Failed to update language.");
+      console.error("[Language Switch Failure]", e);
+      const apiErr = e as ApiError;
+      
+      if (import.meta.env.DEV) {
+        console.log("[Language Switch Failure Dev Info]", {
+          selectedLanguage: language,
+          previousLanguage,
+          apiStatus: "FAILED",
+          error: apiErr.message,
+        });
+      }
+      
+      alert(t("error.language_update_failed", previousLanguage));
     } finally {
       setSavingLanguage(false);
     }
@@ -1023,6 +1048,7 @@ export const App: React.FC = () => {
           ticketId={selectedTicketId}
           viewerRole={profile.role}
           onBack={() => setSelectedTicketId(null)}
+          locale={locale}
         />
       </ErrorBoundary>
     );
@@ -1042,7 +1068,7 @@ export const App: React.FC = () => {
         <main style={{ flex: 1, overflow: "hidden" }}>
           {profile.role === "customer" && (
             <>
-              {currentTab === "chats" && <CustomerHomePage onSelectTicket={setSelectedTicketId} />}
+              {currentTab === "chats" && <CustomerHomePage onSelectTicket={setSelectedTicketId} locale={locale} />}
               {currentTab === "new_chat" && (
                 <NewChatView 
                   onSelectTicket={setSelectedTicketId} 
@@ -1050,7 +1076,7 @@ export const App: React.FC = () => {
                   locale={locale}
                 />
               )}
-              {currentTab === "ai_helper" && <AIChatPage />}
+              {currentTab === "ai_helper" && <AIChatPage locale={locale} />}
               {currentTab === "profile" && (
                 <ProfileView 
                   profile={profile} 
@@ -1058,7 +1084,6 @@ export const App: React.FC = () => {
                   isMockActive={isMockActive} 
                   setCurrentTab={setCurrentTab}
                   setProfile={setProfile}
-                  refreshProfile={() => refreshProfile()}
                 />
               )}
             </>
@@ -1070,9 +1095,10 @@ export const App: React.FC = () => {
                   onSelectTicket={setSelectedTicketId} 
                   activeTab={currentTab as any} 
                   setActiveTab={setCurrentTab as any} 
+                  locale={locale}
                 />
               )}
-              {currentTab === "ai_helper" && <AIChatPage />}
+              {currentTab === "ai_helper" && <AIChatPage locale={locale} />}
               {currentTab === "profile" && (
                 <ProfileView 
                   profile={profile} 
@@ -1080,7 +1106,6 @@ export const App: React.FC = () => {
                   isMockActive={isMockActive} 
                   setCurrentTab={setCurrentTab}
                   setProfile={setProfile}
-                  refreshProfile={() => refreshProfile()}
                 />
               )}
             </>
@@ -1092,9 +1117,10 @@ export const App: React.FC = () => {
                   onSelectTicket={setSelectedTicketId} 
                   activeTab={currentTab === "overview" ? "dashboard" : currentTab as any} 
                   setActiveTab={(tab) => setCurrentTab(tab === "dashboard" ? "overview" : tab)} 
+                  locale={locale}
                 />
               )}
-              {currentTab === "ai_helper" && <AIChatPage />}
+              {currentTab === "ai_helper" && <AIChatPage locale={locale} />}
               {currentTab === "more" && (
                 <ProfileView 
                   profile={profile} 
@@ -1102,7 +1128,6 @@ export const App: React.FC = () => {
                   isMockActive={isMockActive} 
                   setCurrentTab={setCurrentTab}
                   setProfile={setProfile}
-                  refreshProfile={() => refreshProfile()}
                 />
               )}
             </>

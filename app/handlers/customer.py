@@ -711,6 +711,7 @@ async def _answer_customer_without_streaming(
     *,
     customer_id: int,
 ) -> None:
+    # 1. Save and commit user message
     async with SessionLocal() as session, session.begin():
         await ai_service.save_message(
             session,
@@ -720,25 +721,33 @@ async def _answer_customer_without_streaming(
         )
         customer = await session.get(User, customer_id)
         broadcasts_enabled = customer.broadcasts_enabled if customer else True
-        try:
+
+    # 2. Query AI response and save assistant message
+    try:
+        async with SessionLocal() as session:
             answer, model_id = await ai_service.answer(session, customer_id=customer_id)
-        except AIServiceError:
-            logger.info("AI answer failed for telegram_user_id=%s", message.from_user.id)
-            kb = keyboard_service.get_customer_keyboard(
-                CustomerMode.AI_CHAT.value, broadcasts_enabled
-            )
-            await message.answer(
-                "Не удалось получить ответ AI-ассистента. Попробуйте ещё раз или свяжитесь с менеджером.",
-                reply_markup=kb,
-            )
-            return
-        await ai_service.save_message(
-            session,
-            customer_id=customer_id,
-            role=AIMessageRole.ASSISTANT,
-            content=answer,
-            model_id=model_id,
+            async with session.begin():
+                await ai_service.save_message(
+                    session,
+                    customer_id=customer_id,
+                    role=AIMessageRole.ASSISTANT,
+                    content=answer,
+                    model_id=model_id,
+                )
+    except Exception as exc:
+        logger.warning(
+            "AI answer failed for customer_id=%s, telegram_user_id=%s: %s",
+            customer_id, message.from_user.id, str(exc)
         )
+        kb = keyboard_service.get_customer_keyboard(
+            CustomerMode.AI_CHAT.value, broadcasts_enabled
+        )
+        await message.answer(
+            "Не удалось получить ответ AI-ассистента. Попробуйте ещё раз или свяжитесь с менеджером.",
+            reply_markup=kb,
+        )
+        return
+
     kb = keyboard_service.get_customer_keyboard(CustomerMode.AI_CHAT.value, broadcasts_enabled)
     await message.answer(answer, reply_markup=kb)
 

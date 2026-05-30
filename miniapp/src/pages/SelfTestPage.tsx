@@ -213,9 +213,9 @@ export const SelfTestPage: React.FC = () => {
       </div>
 
       <div style={{ display: "none" }}>
-        <CustomerHomePage onSelectTicket={() => {}} />
-        <ManagerDashboardPage onSelectTicket={() => {}} activeTab="new" setActiveTab={() => {}} />
-        <OwnerDashboardPage onSelectTicket={() => {}} activeTab="dashboard" setActiveTab={() => {}} />
+        <CustomerHomePage onSelectTicket={() => {}} locale="ru" />
+        <ManagerDashboardPage onSelectTicket={() => {}} activeTab="new" setActiveTab={() => {}} locale="ru" />
+        <OwnerDashboardPage onSelectTicket={() => {}} activeTab="dashboard" setActiveTab={() => {}} locale="ru" />
       </div>
 
       <div style={{ marginTop: "20px", padding: "12px", border: "1px dashed #2e3b52", borderRadius: "6px" }}>

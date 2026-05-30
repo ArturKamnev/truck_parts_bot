@@ -4,9 +4,13 @@ import { getAIChatHistory, sendAIChatMessage, type AIMessage } from "../api/tick
 import { type ApiError } from "../api/client";
 import { safeTime } from "../utils/normalization";
 
-interface AIChatPageProps {}
+import { t } from "../i18n";
 
-export const AIChatPage: React.FC<AIChatPageProps> = () => {
+interface AIChatPageProps {
+  locale: string;
+}
+
+export const AIChatPage: React.FC<AIChatPageProps> = ({ locale }) => {
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -76,7 +80,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = () => {
       const errorMsg: AIMessage = {
         id: -Date.now() - 2,
         role: "assistant",
-        content: "Извините, не удалось получить ответ от ИИ. Попробуйте еще раз.",
+        content: t("ai.error_message", locale),
         model_id: null,
         created_at: new Date().toISOString(),
       };
@@ -124,7 +128,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = () => {
           </div>
           <div>
             <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#fff" }}>
-              AI Support Helper
+              {t("ai.title", locale)}
             </h2>
             <span style={{ fontSize: "11px", color: "hsl(var(--text-hint-hsl))" }}>
               Powered by LLM
@@ -165,7 +169,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = () => {
       >
         <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: "1px" }} />
         <span>
-          <strong>Внимание:</strong> ИИ-помощник может ошибаться и не обладает актуальной информацией об остатках на складе. Всегда проверяйте важные ответы.
+          {t("ai.warning", locale)}
         </span>
       </div>
 
@@ -188,7 +192,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = () => {
           </div>
         ) : error ? (
           <div style={{ margin: "auto", textAlign: "center", padding: "24px", color: "hsl(var(--text-hint-hsl))" }}>
-            <p style={{ marginBottom: "12px" }}>{error.message || "Ошибка загрузки истории"}</p>
+            <p style={{ marginBottom: "12px" }}>{error.message || t("ai.load_error", locale)}</p>
             <button
               onClick={() => loadHistory()}
               style={{
@@ -200,14 +204,14 @@ export const AIChatPage: React.FC<AIChatPageProps> = () => {
                 cursor: "pointer",
               }}
             >
-              Повторить
+              {t("common.retry", locale)}
             </button>
           </div>
         ) : messages.length === 0 ? (
           <div style={{ margin: "auto", textAlign: "center", color: "hsl(var(--text-hint-hsl))", maxWidth: "250px" }}>
             <Sparkles size={32} style={{ color: "hsl(var(--accent-hsl))", opacity: 0.5, marginBottom: "12px" }} />
             <p style={{ fontSize: "14px", margin: 0 }}>
-              Спросите меня о компании, её услугах или правилах работы. Я помогу найти ответ!
+              {t("ai.hint", locale)}
             </p>
           </div>
         ) : (
@@ -281,7 +285,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = () => {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             disabled={sending || loading}
-            placeholder={sending ? "AI думает..." : "Спросить ИИ-помощника..."}
+            placeholder={sending ? t("ai.thinking", locale) : t("ai.placeholder", locale)}
             style={{
               flex: 1,
               padding: "10px 14px",

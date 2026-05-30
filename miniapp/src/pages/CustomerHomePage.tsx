@@ -4,12 +4,14 @@ import { getCustomerTickets, type Ticket } from "../api/tickets";
 import { TicketCard } from "../components/TicketCard";
 import { EmptyState } from "../components/EmptyState";
 import { type ApiError } from "../api/client";
+import { t } from "../i18n";
 
 interface CustomerHomePageProps {
   onSelectTicket: (ticketId: number) => void;
+  locale: string;
 }
 
-export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTicket }) => {
+export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTicket, locale }) => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -71,15 +73,15 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
             <Bot size={18} />
           </div>
           <div>
-            <h4 style={{ fontSize: "14px", fontWeight: 700 }}>Центр поддержки</h4>
+            <h4 style={{ fontSize: "14px", fontWeight: 700 }}>{t("customer.support_center", locale)}</h4>
             <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>
-              История обращений и ИИ-ассистент
+              {t("customer.support_desc", locale)}
             </span>
           </div>
         </div>
         
         <p style={{ fontSize: "13px", color: "hsl(var(--text-hint-hsl))", lineHeight: "1.4", margin: 0 }}>
-          Здесь вы можете просматривать историю ваших обращений и переписываться с менеджерами поддержки. Для быстрых ответов используйте вкладку AI Helper.
+          {t("customer.support_hint", locale)}
         </p>
 
         <a
@@ -103,7 +105,7 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
           onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hover-hsl))")}
           onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "hsl(var(--accent-hsl))")}
         >
-          <span>Открыть бот в Telegram</span>
+          <span>{t("common.telegram_bot", locale)}</span>
           <ExternalLink size={14} />
         </a>
       </div>
@@ -111,14 +113,14 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
       <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3 style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "0.05em", color: "hsl(var(--text-hint-hsl))" }}>
-            MY REQUESTS ({tickets.length})
+            {t("customer.my_requests", locale)} ({tickets.length})
           </h3>
           {tickets.length > 0 && (
             <button
               onClick={fetchTickets}
-              style={{ fontSize: "12px", color: "hsl(var(--accent-hsl))", fontWeight: 600 }}
+              style={{ fontSize: "12px", color: "hsl(var(--accent-hsl))", fontWeight: 600, background: "none", border: "none", cursor: "pointer" }}
             >
-              Refresh
+              {t("common.refresh", locale)}
             </button>
           )}
         </div>
@@ -136,15 +138,15 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
           </div>
         ) : error ? (
           <EmptyState
-            title="Unable to load requests"
+            title={t("customer.load_failed", locale)}
             description={error.message}
-            actionLabel="Try Again"
+            actionLabel={t("common.retry", locale)}
             onAction={fetchTickets}
           />
         ) : tickets.length === 0 ? (
           <EmptyState
-            title="No support requests found"
-            description="You don't have any active support tickets. Return to the Telegram bot chat to open a request if you need support."
+            title={t("customer.no_requests", locale)}
+            description={t("customer.no_requests_desc", locale)}
           />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -154,6 +156,7 @@ export const CustomerHomePage: React.FC<CustomerHomePageProps> = ({ onSelectTick
                 ticket={ticket}
                 showCustomerDetails={false}
                 onSelect={onSelectTicket}
+                locale={locale}
               />
             ))}
           </div>

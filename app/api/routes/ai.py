@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -12,6 +13,7 @@ from app.db.session import get_session
 from app.services.ai_service import AIService
 from app.utils.enums import AIMessageRole
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
@@ -49,14 +51,16 @@ async def ai_chat(
         role=AIMessageRole.USER,
         content=req.message,
     )
+    await session.commit()
     
     # 2. Query AI completion response
     try:
         response_text, model_id = await ai_service.answer(session, customer_id=current_user.id)
-    except Exception:
+    except Exception as exc:
+        logger.warning("AI chat completion failed for customer_id=%s: %s", current_user.id, str(exc))
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="OpenRouter service failed to process request.",
+            detail="Не удалось получить ответ ИИ. Попробуйте еще раз.",
         )
         
     # 3. Save assistant response in DB
@@ -67,7 +71,6 @@ async def ai_chat(
         content=response_text,
         model_id=model_id,
     )
-    
     await session.commit()
     
     return AIChatResponse(response=response_text, model_id=model_id)

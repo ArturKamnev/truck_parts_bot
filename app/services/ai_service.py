@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.db.models import AIMessage
+from app.db.models import AIMessage, User
 from app.services.knowledge_service import KnowledgeService
 from app.services.settings_service import SettingsService
 from app.utils.enums import AIMessageRole
@@ -134,11 +134,41 @@ class AIService:
             select(AIMessage)
             .where(AIMessage.customer_id == customer_id)
             .order_by(AIMessage.created_at.desc(), AIMessage.id.desc())
-            .limit(self._settings.ai_history_limit)
+            .limit(50)
         )
         rows = list(await session.scalars(stmt))
         rows.reverse()
-        return rows
+        
+        filtered = []
+        for msg in rows:
+            content = msg.content
+            if not content or not content.strip():
+                continue
+            
+            content_lower = content.lower()
+            if "не удалось получить ответ" in content_lower:
+                continue
+            if "ответ был прерван" in content_lower:
+                continue
+            if "failed to process" in content_lower:
+                continue
+            if "service failed to" in content_lower:
+                continue
+            if "error placeholder" in content_lower:
+                continue
+                
+            stripped = content.strip()
+            if (stripped.startswith("{") and stripped.endswith("}")) or (stripped.startswith("[") and stripped.endswith("]")):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, dict) and ("choices" in parsed or "error" in parsed or "id" in parsed or "model" in parsed):
+                        continue
+                except Exception:
+                    pass
+                    
+            filtered.append(msg)
+            
+        return filtered[-10:]
 
     async def answer(self, session: AsyncSession, *, customer_id: int) -> tuple[str, str]:
         request = await self.prepare_chat_completion(session, customer_id=customer_id)
@@ -183,9 +213,13 @@ class AIService:
     ) -> ChatCompletionRequest:
         model_id = await self._settings_service.get_active_model(session)
         history = await self.get_recent_history(session, customer_id=customer_id)
+        
+        user = await session.get(User, customer_id)
+        lang = user.preferred_language if user else "ru"
+        
         return ChatCompletionRequest(
             model_id=model_id,
-            messages=self._build_messages(history),
+            messages=self._build_messages(history, lang=lang),
             temperature=DEFAULT_TEMPERATURE,
             max_tokens=DEFAULT_MAX_TOKENS,
         )
@@ -225,8 +259,19 @@ class AIService:
             logger.warning("OpenRouter stream network error")
             raise AIServiceNetworkError("network_error") from exc
 
-    def _build_messages(self, history: Sequence[AIMessage]) -> list[dict[str, str]]:
-        messages = [{"role": "system", "content": self._knowledge_service.build_system_context()}]
+    def _build_messages(self, history: Sequence[AIMessage], lang: str = "ru") -> list[dict[str, str]]:
+        lang_names = {"ru": "Russian", "en": "English", "ky": "Kyrgyz"}
+        lang_name = lang_names.get(lang, "Russian")
+        
+        system_context = self._knowledge_service.build_system_context().strip()
+        system_content = (
+            f"{system_context}\n\n"
+            f"CRITICAL LANGUAGE INSTRUCTION: You MUST write your response in {lang_name}. This is the user's preferred language.\n"
+            "If the information required to answer the user's question is not available in the company knowledge provided above, "
+            "explicitly state that you do not have that information and suggest contacting a human manager."
+        )
+        
+        messages = [{"role": "system", "content": system_content}]
         for item in history:
             if item.role in {AIMessageRole.USER.value, AIMessageRole.ASSISTANT.value}:
                 messages.append({"role": item.role, "content": item.content})

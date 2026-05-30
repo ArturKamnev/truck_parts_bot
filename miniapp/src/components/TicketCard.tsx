@@ -2,12 +2,14 @@ import React from "react";
 import { Calendar, ChevronRight } from "lucide-react";
 import { type Ticket } from "../api/tickets";
 import { safeDate } from "../utils/normalization";
+import { t } from "../i18n";
 
 interface TicketCardProps {
   ticket: Ticket;
   showCustomerDetails: boolean;
   onSelect: (ticketId: number) => void;
   onClaim?: (ticketId: number) => void;
+  locale: string;
 }
 
 export const TicketCard: React.FC<TicketCardProps> = ({
@@ -15,15 +17,16 @@ export const TicketCard: React.FC<TicketCardProps> = ({
   showCustomerDetails,
   onSelect,
   onClaim,
+  locale,
 }) => {
   const getStatusStyle = (status: string) => {
     switch (status) {
       case "OPEN":
-        return { bg: "rgba(75, 181, 67, 0.15)", text: "#4bb543", label: "Open" };
+        return { bg: "rgba(75, 181, 67, 0.15)", text: "#4bb543", label: t("chat.status_open", locale) };
       case "CLAIMED":
-        return { bg: "rgba(82, 136, 193, 0.15)", text: "#5288c1", label: "Claimed" };
+        return { bg: "rgba(82, 136, 193, 0.15)", text: "#5288c1", label: t("chat.status_claimed", locale) };
       case "CLOSED":
-        return { bg: "rgba(112, 132, 153, 0.15)", text: "#708499", label: "Closed" };
+        return { bg: "rgba(112, 132, 153, 0.15)", text: "#708499", label: t("chat.status_closed", locale) };
       default:
         return { bg: "rgba(112, 132, 153, 0.15)", text: "#708499", label: status };
     }
@@ -134,7 +137,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
             e.currentTarget.style.opacity = "1";
           }}
         >
-          Claim Ticket
+          {t("chat.claim_ticket", locale)}
         </button>
       )}
     </div>

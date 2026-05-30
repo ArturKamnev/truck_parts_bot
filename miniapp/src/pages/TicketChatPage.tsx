@@ -9,16 +9,20 @@ import {
 import { ChatBubble } from "../components/ChatBubble";
 import { type ApiError } from "../api/client";
 
+import { t } from "../i18n";
+
 interface TicketChatPageProps {
   ticketId: number;
   viewerRole: "customer" | "manager" | "owner" | "co_owner";
   onBack: () => void;
+  locale: string;
 }
 
 export const TicketChatPage: React.FC<TicketChatPageProps> = ({
   ticketId,
   viewerRole,
   onBack,
+  locale,
 }) => {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<TicketMessage[]>([]);
@@ -285,11 +289,11 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
           }}
         >
           <ArrowLeft size={18} />
-          Back
+          {t("common.back", locale) || "Back"}
         </button>
 
         <span style={{ fontSize: "14px", fontWeight: 700 }}>
-          {loading ? "Loading chat..." : `Ticket #${ticketId}`}
+          {loading ? (t("chat.loading", locale) || "Loading chat...") : `Ticket #${ticketId}`}
         </span>
 
         {viewerRole !== "customer" && ticket && (ticket.status === "OPEN" || ticket.status === "CLAIMED") && (
@@ -309,7 +313,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
               cursor: "pointer",
             }}
           >
-            Close
+            {t("chat.close", locale) || "Close"}
           </button>
         ) : (
           <button
@@ -346,10 +350,10 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
         >
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <div>
-              Client: <span style={{ color: "#fff", fontWeight: 500 }}>{customerName}</span>
+              {t("chat.client", locale) || "Client"}: <span style={{ color: "#fff", fontWeight: 500 }}>{customerName}</span>
             </div>
             <div>
-              Status: <span style={{ color: "hsl(var(--accent-hsl))", fontWeight: 600, textTransform: "uppercase" }}>{ticket.status}</span>
+              {t("chat.status", locale) || "Status"}: <span style={{ color: "hsl(var(--accent-hsl))", fontWeight: 600, textTransform: "uppercase" }}>{ticket.status}</span>
             </div>
           </div>
 
@@ -388,7 +392,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 }}
               >
                 <ShieldCheck size={14} />
-                Act as Supervisor (Enables Messaging & Close Actions)
+                {t("chat.supervisor_mode", locale) || "Act as Supervisor (Enables Messaging & Close Actions)"}
               </label>
             </div>
           )}
@@ -432,12 +436,12 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 cursor: "pointer",
               }}
             >
-              Retry Load
+              {t("chat.retry_load", locale) || "Retry Load"}
             </button>
           </div>
         ) : messages.length === 0 ? (
           <div style={{ margin: "auto", textAlign: "center", color: "hsl(var(--text-hint-hsl))" }}>
-            <p style={{ fontSize: "14px" }}>No messages in this chat history.</p>
+            <p style={{ fontSize: "14px" }}>{t("chat.no_messages", locale) || "No messages in this chat history."}</p>
           </div>
         ) : (
           <>
@@ -466,7 +470,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
           {ticket.status === "CLOSED" || ticket.status === "CANCELLED_BY_CUSTOMER" ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "13px" }}>
               <AlertTriangle size={16} />
-              <span>Ticket is closed. Composer disabled.</span>
+              <span>{t("chat.ticket_closed_composer_disabled", locale) || "Ticket is closed. Composer disabled."}</span>
             </div>
           ) : viewerRole === "customer" ? (
             <form
@@ -482,7 +486,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 disabled={sending}
-                placeholder="Type your message..."
+                placeholder={t("chat.type_message_placeholder", locale) || "Type your message..."}
                 style={{
                   flex: 1,
                   padding: "10px 14px",
@@ -510,12 +514,12 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                   opacity: sending || !inputText.trim() ? 0.5 : 1,
                 }}
               >
-                Send
+                {t("chat.send", locale) || "Send"}
               </button>
             </form>
           ) : (viewerRole === "owner" || viewerRole === "co_owner") && !asSupervisor ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "13px" }}>
-              <span>You are in read-only mode. Enable Supervisor Mode above to write.</span>
+              <span>{t("chat.readonly_mode_supervisor", locale) || "You are in read-only mode. Enable Supervisor Mode above to write."}</span>
             </div>
           ) : ticket.status === "OPEN" ? (
             <button
@@ -532,7 +536,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 cursor: "pointer",
               }}
             >
-              Claim Ticket to Start Chatting
+              {t("chat.claim_to_chat", locale) || "Claim Ticket to Start Chatting"}
             </button>
           ) : (
             <form
@@ -548,7 +552,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 disabled={sending}
-                placeholder="Type your message to customer..."
+                placeholder={t("chat.type_message_to_customer_placeholder", locale) || "Type your message to customer..."}
                 style={{
                   flex: 1,
                   padding: "10px 14px",
@@ -576,7 +580,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                   opacity: sending || !inputText.trim() ? 0.5 : 1,
                 }}
               >
-                Send
+                {t("chat.send", locale) || "Send"}
               </button>
             </form>
           )}
@@ -611,9 +615,9 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
             }}
           >
             <div style={{ textAlign: "center" }}>
-              <h3 style={{ fontSize: "16px", fontWeight: 700, margin: "0 0 8px 0", color: "#fff" }}>Close Ticket?</h3>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, margin: "0 0 8px 0", color: "#fff" }}>{t("chat.close_confirm_title", locale) || "Close Ticket?"}</h3>
               <p style={{ fontSize: "13px", color: "hsl(var(--text-hint-hsl))", margin: 0 }}>
-                This will return the customer to the AI helper chat and close this support thread.
+                {t("chat.close_confirm_desc", locale) || "This will return the customer to the AI helper chat and close this support thread."}
               </p>
             </div>
             
@@ -631,7 +635,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                   cursor: "pointer",
                 }}
               >
-                Yes, Close Ticket
+                {t("chat.yes_close", locale) || "Yes, Close Ticket"}
               </button>
               <button
                 onClick={() => setShowCloseConfirm(false)}
@@ -646,7 +650,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                   cursor: "pointer",
                 }}
               >
-                Cancel
+                {t("chat.cancel", locale) || "Cancel"}
               </button>
             </div>
           </div>

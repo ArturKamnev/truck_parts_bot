@@ -4,11 +4,13 @@ import { getManagerNewTickets, getManagerActiveTickets, getManagerClosedTickets,
 import { TicketCard } from "../components/TicketCard";
 import { EmptyState } from "../components/EmptyState";
 import { type ApiError } from "../api/client";
+import { t } from "../i18n";
 
 interface ManagerDashboardPageProps {
   onSelectTicket: (ticketId: number) => void;
   activeTab?: TabType;
   setActiveTab?: (tab: TabType) => void;
+  locale: string;
 }
 
 type TabType = "new" | "active" | "closed";
@@ -16,7 +18,8 @@ type TabType = "new" | "active" | "closed";
 export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({ 
   onSelectTicket,
   activeTab: externalActiveTab,
-  setActiveTab: externalSetActiveTab
+  setActiveTab: externalSetActiveTab,
+  locale
 }) => {
   const [internalActiveTab, setInternalActiveTab] = useState<TabType>("active");
   const activeTab = externalActiveTab || internalActiveTab;
@@ -57,7 +60,7 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({
       fetchTickets();
     } catch (err) {
       const apiErr = err as ApiError;
-      alert(apiErr.message || "Failed to claim ticket. It might have been claimed by another manager.");
+      alert(apiErr.message || t("manager.claim_failed", locale));
       fetchTickets();
     }
   };
@@ -100,10 +103,13 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({
             fontWeight: 600,
             color: activeTab === "active" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
             backgroundColor: activeTab === "active" ? "rgba(82, 136, 193, 0.08)" : "transparent",
+            background: "none",
+            border: "none",
+            cursor: "pointer"
           }}
         >
           <MessageSquare size={16} />
-          My Active Chats
+          {t("manager.my_active_chats", locale)}
         </button>
         <button
           onClick={() => setActiveTab("new")}
@@ -119,10 +125,13 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({
             fontWeight: 600,
             color: activeTab === "new" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
             backgroundColor: activeTab === "new" ? "rgba(82, 136, 193, 0.08)" : "transparent",
+            background: "none",
+            border: "none",
+            cursor: "pointer"
           }}
         >
           <Inbox size={16} />
-          New Tickets (Queue)
+          {t("manager.new_tickets_queue", locale)}
         </button>
         <button
           onClick={() => setActiveTab("closed")}
@@ -138,10 +147,13 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({
             fontWeight: 600,
             color: activeTab === "closed" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
             backgroundColor: activeTab === "closed" ? "rgba(82, 136, 193, 0.08)" : "transparent",
+            background: "none",
+            border: "none",
+            cursor: "pointer"
           }}
         >
           <CheckCircle2 size={16} />
-          Closed Chats
+          {t("manager.closed_chats", locale)}
         </button>
       </div>
 
@@ -158,13 +170,13 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.05em", color: "hsl(var(--text-hint-hsl))" }}>
-            {activeTab === "new" ? "UNCLAIMED OPEN QUEUE" : activeTab === "active" ? "MY ASSIGNED TICKETS" : "CLOSED CHATS"} ({tickets.length})
+            {activeTab === "new" ? t("manager.unclaimed_queue", locale) : activeTab === "active" ? t("manager.assigned_tickets", locale) : t("manager.closed_chats_list", locale)} ({tickets.length})
           </span>
           <button
             onClick={fetchTickets}
-            style={{ fontSize: "12px", color: "hsl(var(--accent-hsl))", fontWeight: 600 }}
+            style={{ fontSize: "12px", color: "hsl(var(--accent-hsl))", fontWeight: 600, background: "none", border: "none", cursor: "pointer" }}
           >
-            Refresh
+            {t("common.refresh", locale)}
           </button>
         </div>
 
@@ -180,20 +192,20 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({
           </div>
         ) : error ? (
           <EmptyState
-            title="Failed to load tickets"
+            title={t("manager.load_failed", locale)}
             description={error.message}
-            actionLabel="Try Again"
+            actionLabel={t("common.retry", locale)}
             onAction={fetchTickets}
           />
         ) : tickets.length === 0 ? (
           <EmptyState
-            title={activeTab === "new" ? "Queue is empty" : activeTab === "active" ? "No active chats" : "No closed chats"}
+            title={activeTab === "new" ? t("manager.queue_empty", locale) : activeTab === "active" ? t("manager.no_active", locale) : t("manager.no_closed", locale)}
             description={
               activeTab === "new"
-                ? "No customer requests are currently waiting for a manager."
+                ? t("manager.queue_empty_desc", locale)
                 : activeTab === "active"
-                  ? "You don't have any claimed tickets. Switch to the Queue tab to take a support request."
-                  : "No closed or cancelled tickets found assigned to you."
+                  ? t("manager.no_active_desc", locale)
+                  : t("manager.no_closed_desc", locale)
             }
           />
         ) : (
@@ -205,6 +217,7 @@ export const ManagerDashboardPage: React.FC<ManagerDashboardPageProps> = ({
                 showCustomerDetails={true}
                 onSelect={onSelectTicket}
                 onClaim={activeTab === "new" ? handleClaim : undefined}
+                locale={locale}
               />
             ))}
           </div>

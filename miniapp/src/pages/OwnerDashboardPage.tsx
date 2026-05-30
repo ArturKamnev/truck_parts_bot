@@ -20,16 +20,20 @@ import { TicketCard } from "../components/TicketCard";
 import { EmptyState } from "../components/EmptyState";
 import { type ApiError } from "../api/client";
 
+import { t } from "../i18n";
+
 interface OwnerDashboardPageProps {
   onSelectTicket: (ticketId: number) => void;
   activeTab?: "dashboard" | "managers" | "stats";
   setActiveTab?: (tab: "dashboard" | "managers" | "stats") => void;
+  locale: string;
 }
 
 export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({ 
   onSelectTicket,
   activeTab: externalActiveTab,
-  setActiveTab: externalSetActiveTab
+  setActiveTab: externalSetActiveTab,
+  locale
 }) => {
   const [stats, setStats] = useState<OwnerStats | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -128,7 +132,7 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
   };
 
   useEffect(() => {
-    if (activeTab === "dashboard") {
+    if (activeTab === "dashboard" || activeTab === "stats") {
       fetchDashboardData();
     } else {
       fetchManagersData();
@@ -688,6 +692,30 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
   }
 
   if (activeTab === "stats") {
+    let errorTitle = t("common.error", locale);
+    let errorDesc = error?.message || "";
+    
+    if (error) {
+      if (error.status === 401 || error.status === 403) {
+        errorTitle = t("error.restricted_access", locale);
+        errorDesc = t("error.restricted_access_desc", locale);
+      } else if (error.status === 500 || error.status === 0) {
+        errorTitle = t("error.connection_failure_title", locale);
+        errorDesc = t("error.connection_failure", locale);
+      }
+    }
+
+    const totalCustomers = stats?.total_customers ?? 0;
+    const openTickets = stats?.open_tickets ?? 0;
+    const claimedTickets = stats?.claimed_tickets ?? 0;
+    const closedTickets = stats?.closed_tickets ?? 0;
+    const avgClaimTime = stats?.avg_first_claim_seconds !== undefined && stats?.avg_first_claim_seconds !== null
+      ? t("stats.seconds", locale).replace("{n}", String(Math.round(stats.avg_first_claim_seconds)))
+      : "N/A";
+    const totalTickets = stats?.total_tickets ?? 0;
+    const totalAiMessages = stats?.total_ai_messages ?? 0;
+    const newCustomersToday = stats?.new_customers_today ?? 0;
+
     return (
       <div
         className="animate-fade-in"
@@ -701,14 +729,14 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "0.05em", color: "hsl(var(--text-hint-hsl))" }}>
-            SYSTEM STATISTICS
+          <h2 style={{ fontSize: "16px", fontWeight: 700, letterSpacing: "0.05em", color: "hsl(var(--text-hint-hsl))", margin: 0 }}>
+            {t("stats.system_statistics", locale)}
           </h2>
           <button
             onClick={fetchDashboardData}
             style={{ fontSize: "12px", color: "hsl(var(--accent-hsl))", fontWeight: 600, background: "none", border: "none", cursor: "pointer" }}
           >
-            Refresh
+            {t("common.refresh", locale)}
           </button>
         </div>
 
@@ -720,63 +748,65 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
             ))}
           </div>
         ) : error ? (
-          <EmptyState title="Failed to load statistics" description={error.message} actionLabel="Try Again" onAction={fetchDashboardData} />
+          <EmptyState title={errorTitle} description={errorDesc} actionLabel={t("common.retry", locale)} onAction={fetchDashboardData} />
         ) : stats ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "10px" }}>
               <div style={{ backgroundColor: "hsl(var(--card-bg-hsl))", border: "1px solid hsl(var(--border-hsl))", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "hsl(var(--accent-hsl))", marginBottom: "4px" }}>
                   <Users size={14} />
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>CUSTOMERS</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>{t("stats.customers", locale)}</span>
                 </div>
-                <span style={{ fontSize: "20px", fontWeight: 700 }}>{stats.total_customers}</span>
+                <span style={{ fontSize: "20px", fontWeight: 700 }}>{totalCustomers}</span>
               </div>
               <div style={{ backgroundColor: "hsl(var(--card-bg-hsl))", border: "1px solid hsl(var(--border-hsl))", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "hsl(var(--warning-hsl))", marginBottom: "4px" }}>
                   <Layers size={14} />
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>OPEN TICKETS</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>{t("stats.open_tickets", locale)}</span>
                 </div>
-                <span style={{ fontSize: "20px", fontWeight: 700 }}>{stats.open_tickets}</span>
+                <span style={{ fontSize: "20px", fontWeight: 700 }}>{openTickets}</span>
               </div>
               <div style={{ backgroundColor: "hsl(var(--card-bg-hsl))", border: "1px solid hsl(var(--border-hsl))", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "hsl(var(--accent-hsl))", marginBottom: "4px" }}>
                   <MessageSquare size={14} />
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>CLAIMED</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>{t("stats.claimed", locale)}</span>
                 </div>
-                <span style={{ fontSize: "20px", fontWeight: 700 }}>{stats.claimed_tickets}</span>
+                <span style={{ fontSize: "20px", fontWeight: 700 }}>{claimedTickets}</span>
               </div>
               <div style={{ backgroundColor: "hsl(var(--card-bg-hsl))", border: "1px solid hsl(var(--border-hsl))", borderRadius: "var(--radius-md)", padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "hsl(var(--text-hint-hsl))", marginBottom: "4px" }}>
                   <FileText size={14} />
-                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>CLOSED</span>
+                  <span style={{ fontSize: "11px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>{t("stats.closed", locale)}</span>
                 </div>
-                <span style={{ fontSize: "20px", fontWeight: 700 }}>{stats.closed_tickets}</span>
+                <span style={{ fontSize: "20px", fontWeight: 700 }}>{closedTickets}</span>
               </div>
             </div>
             
             <div style={{ backgroundColor: "hsl(var(--card-bg-hsl))", border: "1px solid hsl(var(--border-hsl))", borderRadius: "var(--radius-md)", padding: "16px", display: "flex", flexDirection: "column", gap: "8px" }}>
-              <span style={{ fontSize: "12px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>PERFORMANCE METRICS</span>
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "hsl(var(--text-hint-hsl))" }}>{t("stats.performance_metrics", locale)}</span>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "14px" }}>
-                <span>Average First Claim Time:</span>
+                <span>{t("stats.avg_claim_time", locale)}</span>
                 <span style={{ fontWeight: 700, color: "hsl(var(--accent-hsl))" }}>
-                  {stats.avg_first_claim_seconds !== null ? `${Math.round(stats.avg_first_claim_seconds)} seconds` : "N/A"}
+                  {avgClaimTime}
                 </span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "14px" }}>
-                <span>Total Support Threads (Tickets):</span>
-                <span style={{ fontWeight: 700 }}>{stats.total_tickets}</span>
+                <span>{t("stats.total_tickets", locale)}</span>
+                <span style={{ fontWeight: 700 }}>{totalTickets}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "14px" }}>
-                <span>Total AI Helper messages:</span>
-                <span style={{ fontWeight: 700 }}>{stats.total_ai_messages}</span>
+                <span>{t("stats.total_ai_messages", locale)}</span>
+                <span style={{ fontWeight: 700 }}>{totalAiMessages}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "14px" }}>
-                <span>New Customers Today:</span>
-                <span style={{ fontWeight: 700, color: "hsl(var(--success-hsl))" }}>{stats.new_customers_today}</span>
+                <span>{t("stats.new_customers_today", locale)}</span>
+                <span style={{ fontWeight: 700, color: "hsl(var(--success-hsl))" }}>{newCustomersToday}</span>
               </div>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <EmptyState title="No statistics data" description="Click refresh to load statistics data." actionLabel={t("common.refresh", locale)} onAction={fetchDashboardData} />
+        )}
       </div>
     );
   }
@@ -956,6 +986,7 @@ export const OwnerDashboardPage: React.FC<OwnerDashboardPageProps> = ({
                 ticket={ticket}
                 showCustomerDetails={true}
                 onSelect={onSelectTicket}
+                locale={locale}
               />
             ))}
           </div>
