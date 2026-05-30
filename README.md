@@ -39,6 +39,10 @@ OPENROUTER_APP_NAME=Company Support Bot
 OPENROUTER_SITE_URL=
 
 AI_HISTORY_LIMIT=12
+AI_STREAMING_ENABLED=true
+AI_STREAM_UPDATE_INTERVAL_SECONDS=0.8
+AI_STREAM_MIN_CHARS=80
+AI_STREAM_USE_TELEGRAM_DRAFT=true
 LOG_LEVEL=INFO
 
 INSTAGRAM_URL=
@@ -94,6 +98,26 @@ Customers use the bot in a private chat:
 - press `🚪 Выйти из чата с менеджером` to cancel and return to AI mode.
 
 AI answers are based on `company_knowledge.md`. If exact information is missing, the assistant should say that exact information is unavailable and suggest contacting a manager.
+
+AI customer-chat responses stream by default. The bot first tries Telegram `sendMessageDraft`
+through a raw Bot API call; if Telegram or the framework does not support it, the bot
+automatically falls back to a temporary `💭 Думаю...` message and throttled
+`editMessageText` updates. Partial updates are sent without parse mode to avoid broken
+Markdown/HTML while the answer is still incomplete.
+
+Streaming settings:
+
+```env
+AI_STREAMING_ENABLED=true
+AI_STREAM_UPDATE_INTERVAL_SECONDS=0.8
+AI_STREAM_MIN_CHARS=80
+AI_STREAM_USE_TELEGRAM_DRAFT=true
+```
+
+If `AI_STREAMING_ENABLED=false`, the bot uses the original non-streaming OpenRouter flow.
+If a customer sends a second AI question while the previous answer is still streaming, the
+bot rejects it with `Дождитесь окончания текущего ответа.`. The lock is in-memory per bot
+process, so keep Railway replicas at `1` as documented below.
 
 ## Manager Flow
 
@@ -171,6 +195,10 @@ Manual Railway variables to fill:
 - `OPENROUTER_APP_NAME`
 - `OPENROUTER_SITE_URL`
 - `AI_HISTORY_LIMIT`
+- `AI_STREAMING_ENABLED`
+- `AI_STREAM_UPDATE_INTERVAL_SECONDS`
+- `AI_STREAM_MIN_CHARS`
+- `AI_STREAM_USE_TELEGRAM_DRAFT`
 - `LOG_LEVEL`
 - `INSTAGRAM_URL`
 - `OFFICIAL_SITE_URL`
@@ -184,6 +212,58 @@ Secrets such as bot tokens, OpenRouter keys, Telegram IDs, private URLs, and dat
 pytest
 ruff check .
 ```
+
+## Manual Verification
+
+Local SQLite:
+
+1. Set `DATABASE_URL=sqlite+aiosqlite:///./bot.db` in `.env`.
+2. Set `AI_STREAMING_ENABLED=true`.
+3. Run `python -m alembic upgrade head`.
+4. Run `python -m app.main`.
+5. From a customer Telegram account, send a normal text question in AI mode and confirm a
+   partial answer appears quickly.
+
+Railway PostgreSQL:
+
+1. Add or update the Railway variables listed above, including the four `AI_STREAM_*`
+   variables.
+2. Keep replicas at `1`.
+3. Run the pre-deploy command `python -m alembic upgrade head`.
+4. Deploy with start command `python -m app.main`.
+5. Ask a normal AI question from a customer account and confirm the active owner-selected
+   OpenRouter model is used.
+
+Streaming enabled:
+
+1. Set `AI_STREAMING_ENABLED=true`.
+2. Restart the bot.
+3. Send a longer AI question.
+4. Confirm the temporary/draft response updates before the final answer is complete.
+
+Streaming disabled:
+
+1. Set `AI_STREAMING_ENABLED=false`.
+2. Restart the bot.
+3. Send an AI question.
+4. Confirm the bot waits and then sends one final AI answer, matching the previous behavior.
+
+Simulated OpenRouter streaming failure:
+
+1. Temporarily set an invalid `OPENROUTER_API_KEY`, or monkeypatch
+   `AIService.stream_chat_completion` in a local test run to raise after/before a delta.
+2. If it fails before text, confirm the bot falls back to the non-streaming request.
+3. If it fails after partial text, confirm the bot finalizes with a polite interrupted-answer
+   message.
+
+Two customer accounts:
+
+1. Start two different customer Telegram accounts with the bot.
+2. Send AI questions from both accounts close together.
+3. Confirm both receive separate answers and one customer's partial text never appears in
+   the other customer's chat.
+4. Send a second message from one customer while their first answer is still streaming and
+   confirm the bot replies `Дождитесь окончания текущего ответа.`.
 
 ## Deferred Features
 

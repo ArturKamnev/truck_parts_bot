@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     openrouter_app_name: str = Field(default="Company Support Bot", alias="OPENROUTER_APP_NAME")
     openrouter_site_url: str | None = Field(default=None, alias="OPENROUTER_SITE_URL")
     ai_history_limit: int = Field(default=12, ge=2, le=50, alias="AI_HISTORY_LIMIT")
+    ai_streaming_enabled: bool = Field(default=True, alias="AI_STREAMING_ENABLED")
+    ai_stream_update_interval_seconds: float = Field(
+        default=0.8, ge=0.1, le=10.0, alias="AI_STREAM_UPDATE_INTERVAL_SECONDS"
+    )
+    ai_stream_min_chars: int = Field(default=80, ge=1, le=1000, alias="AI_STREAM_MIN_CHARS")
+    ai_stream_use_telegram_draft: bool = Field(
+        default=True, alias="AI_STREAM_USE_TELEGRAM_DRAFT"
+    )
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     instagram_url: str | None = Field(default=None, alias="INSTAGRAM_URL")
     official_site_url: str | None = Field(default=None, alias="OFFICIAL_SITE_URL")

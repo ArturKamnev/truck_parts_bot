@@ -43,8 +43,8 @@ class FakeMessage:
         self.media_group_id = None
         self.answers: list[dict] = []
 
-    async def answer(self, text: str, reply_markup=None):
-        self.answers.append({"text": text, "reply_markup": reply_markup})
+    async def answer(self, text: str, reply_markup=None, **kwargs):
+        self.answers.append({"text": text, "reply_markup": reply_markup, **kwargs})
 
 
 class FakeAIService:

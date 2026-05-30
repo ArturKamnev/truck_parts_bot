@@ -9,6 +9,7 @@ from aiogram.types import ErrorEvent
 from app.config import Settings
 from app.handlers import callbacks, customer, manager, owner
 from app.services.ai_service import AIService
+from app.services.ai_streaming_lock import AIStreamingLockRegistry
 from app.services.authorization_service import AuthorizationService
 from app.services.broadcast_service import BroadcastService
 from app.services.knowledge_service import KnowledgeService
@@ -28,6 +29,7 @@ def create_bot_and_dispatcher(settings: Settings) -> tuple[Bot, Dispatcher]:
     settings_service = SettingsService(settings, authorization)
     knowledge_service = KnowledgeService()
     ai_service = AIService(settings, settings_service, knowledge_service)
+    streaming_locks = AIStreamingLockRegistry()
     ticket_service = TicketService(authorization)
     relay_service = RelayService(settings, ticket_service, ai_service)
     broadcast_service = BroadcastService(settings, authorization, relay_service)
@@ -38,6 +40,7 @@ def create_bot_and_dispatcher(settings: Settings) -> tuple[Bot, Dispatcher]:
     dp["settings_service"] = settings_service
     dp["knowledge_service"] = knowledge_service
     dp["ai_service"] = ai_service
+    dp["streaming_locks"] = streaming_locks
     dp["ticket_service"] = ticket_service
     dp["relay_service"] = relay_service
     dp["broadcast_service"] = broadcast_service

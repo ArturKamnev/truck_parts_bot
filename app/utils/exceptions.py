@@ -23,3 +23,23 @@ class UnsupportedRelayContentError(BotError):
 
 class AIServiceError(BotError):
     """Raised for user-safe AI service failures."""
+
+
+class AIServiceTimeoutError(AIServiceError):
+    """Raised when the AI provider does not respond in time."""
+
+
+class AIServiceRateLimitError(AIServiceError):
+    """Raised when the AI provider rate-limits the request."""
+
+
+class AIServiceUnavailableModelError(AIServiceError):
+    """Raised when the selected AI model is unavailable."""
+
+
+class AIServiceInvalidAPIKeyError(AIServiceError):
+    """Raised when the AI provider rejects the configured API key."""
+
+
+class AIServiceNetworkError(AIServiceError):
+    """Raised when the AI provider cannot be reached."""

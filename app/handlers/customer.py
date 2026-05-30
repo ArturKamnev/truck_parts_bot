@@ -25,9 +25,11 @@ from app.keyboards.customer import (
 from app.keyboards.manager import manager_keyboard
 from app.keyboards.owner import owner_panel_keyboard
 from app.services.ai_service import AIService
+from app.services.ai_streaming_lock import AIStreamingLockRegistry, default_streaming_locks
 from app.services.authorization_service import AuthorizationService
 from app.services.relay_service import RelayService
 from app.services.settings_service import SettingsService
+from app.services.telegram_stream_renderer import TelegramPartialResponseRenderer
 from app.services.ticket_service import TicketService
 from app.utils.enums import AIMessageRole, CustomerMode, TicketMessageSenderType, TicketStatus
 from app.utils.exceptions import (
@@ -243,6 +245,7 @@ async def private_text_message(
     ticket_service: TicketService,
     relay_service: RelayService,
     ai_service: AIService,
+    streaming_locks: AIStreamingLockRegistry | None = None,
 ) -> None:
     if message.from_user is None or message.text is None:
         return
@@ -251,7 +254,9 @@ async def private_text_message(
     if message.text.startswith("/"):
         await message.answer("Выберите действие в меню или напишите вопрос обычным сообщением.")
         return
-    await _handle_customer_content(message, bot, ticket_service, relay_service, ai_service)
+    await _handle_customer_content(
+        message, bot, ticket_service, relay_service, ai_service, streaming_locks
+    )
 
 
 @router.message(IsCustomer(), F.chat.type == "private")
@@ -261,10 +266,13 @@ async def private_media_message(
     ticket_service: TicketService,
     relay_service: RelayService,
     ai_service: AIService,
+    streaming_locks: AIStreamingLockRegistry | None = None,
 ) -> None:
     if message.from_user is None:
         return
-    await _handle_customer_content(message, bot, ticket_service, relay_service, ai_service)
+    await _handle_customer_content(
+        message, bot, ticket_service, relay_service, ai_service, streaming_locks
+    )
 
 
 async def _handle_customer_content(
@@ -273,6 +281,7 @@ async def _handle_customer_content(
     ticket_service: TicketService,
     relay_service: RelayService,
     ai_service: AIService,
+    streaming_locks: AIStreamingLockRegistry | None = None,
 ) -> None:
     if message.from_user is None:
         return
@@ -359,14 +368,41 @@ async def _handle_customer_content(
             return
 
         customer.mode = CustomerMode.AI_CHAT.value
+        customer_id = customer.id
+
+    streaming_locks = streaming_locks or default_streaming_locks
+    acquired = await streaming_locks.acquire(customer_id)
+    if not acquired:
+        await message.answer(
+            "Дождитесь окончания текущего ответа.",
+            reply_markup=customer_keyboard(),
+        )
+        return
+
+    try:
+        if getattr(ai_service, "streaming_enabled", False):
+            await _answer_customer_with_streaming(message, bot, ai_service, customer_id=customer_id)
+        else:
+            await _answer_customer_without_streaming(message, ai_service, customer_id=customer_id)
+    finally:
+        await streaming_locks.release(customer_id)
+
+
+async def _answer_customer_without_streaming(
+    message: Message,
+    ai_service: AIService,
+    *,
+    customer_id: int,
+) -> None:
+    async with SessionLocal() as session, session.begin():
         await ai_service.save_message(
             session,
-            customer_id=customer.id,
+            customer_id=customer_id,
             role=AIMessageRole.USER,
-            content=message.text,
+            content=message.text or "",
         )
         try:
-            answer, model_id = await ai_service.answer(session, customer_id=customer.id)
+            answer, model_id = await ai_service.answer(session, customer_id=customer_id)
         except AIServiceError:
             logger.info("AI answer failed for telegram_user_id=%s", message.from_user.id)
             await message.answer(
@@ -377,12 +413,128 @@ async def _handle_customer_content(
             return
         await ai_service.save_message(
             session,
-            customer_id=customer.id,
+            customer_id=customer_id,
             role=AIMessageRole.ASSISTANT,
             content=answer,
             model_id=model_id,
         )
     await message.answer(answer, reply_markup=customer_keyboard())
+
+
+async def _answer_customer_with_streaming(
+    message: Message,
+    bot: Bot,
+    ai_service: AIService,
+    *,
+    customer_id: int,
+) -> None:
+    async with SessionLocal() as session, session.begin():
+        await ai_service.save_message(
+            session,
+            customer_id=customer_id,
+            role=AIMessageRole.USER,
+            content=message.text or "",
+        )
+        request = await ai_service.prepare_chat_completion(session, customer_id=customer_id)
+
+    settings = ai_service.settings
+    renderer = TelegramPartialResponseRenderer.from_settings(settings)
+    await renderer.start(message, bot)
+
+    chunks: list[str] = []
+    try:
+        async for delta in ai_service.stream_chat_completion(
+            model=request.model_id,
+            messages=request.messages,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+        ):
+            chunks.append(delta)
+            await renderer.render_partial(bot, message.chat.id, "".join(chunks))
+    except AIServiceError:
+        if chunks:
+            logger.info(
+                "AI stream interrupted after partial text for telegram_user_id=%s",
+                message.from_user.id,
+            )
+            answer = _interrupted_answer("".join(chunks))
+            await renderer.finalize(bot, message.chat.id, answer, reply_markup=customer_keyboard())
+            await _save_assistant_answer(ai_service, customer_id, answer, request.model_id)
+            return
+
+        logger.info("AI stream failed before text for telegram_user_id=%s", message.from_user.id)
+        await _fallback_to_non_streaming_after_stream_failure(
+            message, bot, renderer, ai_service, customer_id=customer_id
+        )
+        return
+
+    answer = "".join(chunks).strip()
+    if not answer:
+        await _fallback_to_non_streaming_after_stream_failure(
+            message, bot, renderer, ai_service, customer_id=customer_id
+        )
+        return
+
+    await renderer.finalize(bot, message.chat.id, answer, reply_markup=customer_keyboard())
+    await _save_assistant_answer(ai_service, customer_id, answer, request.model_id)
+
+
+async def _fallback_to_non_streaming_after_stream_failure(
+    message: Message,
+    bot: Bot,
+    renderer: TelegramPartialResponseRenderer,
+    ai_service: AIService,
+    *,
+    customer_id: int,
+) -> None:
+    try:
+        async with SessionLocal() as session, session.begin():
+            answer, model_id = await ai_service.answer(session, customer_id=customer_id)
+            await ai_service.save_message(
+                session,
+                customer_id=customer_id,
+                role=AIMessageRole.ASSISTANT,
+                content=answer,
+                model_id=model_id,
+            )
+    except AIServiceError:
+        logger.info("AI fallback answer failed for telegram_user_id=%s", message.from_user.id)
+        await renderer.finalize(
+            bot,
+            message.chat.id,
+            "Не удалось получить ответ AI-ассистента. "
+            "Попробуйте ещё раз или свяжитесь с менеджером.",
+            reply_markup=customer_keyboard(),
+        )
+        return
+
+    await renderer.finalize(bot, message.chat.id, answer, reply_markup=customer_keyboard())
+
+
+async def _save_assistant_answer(
+    ai_service: AIService,
+    customer_id: int,
+    answer: str,
+    model_id: str,
+) -> None:
+    async with SessionLocal() as session, session.begin():
+        await ai_service.save_message(
+            session,
+            customer_id=customer_id,
+            role=AIMessageRole.ASSISTANT,
+            content=answer,
+            model_id=model_id,
+        )
+
+
+def _interrupted_answer(partial_text: str) -> str:
+    partial = partial_text.strip()
+    suffix = (
+        "Ответ был прерван. Попробуйте задать вопрос ещё раз или свяжитесь с менеджером."
+    )
+    if partial:
+        return f"{partial}\n\n{suffix}"
+    return suffix
 
 
 def _active_ticket_text(status: str) -> str:
