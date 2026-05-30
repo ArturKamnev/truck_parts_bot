@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 from __future__ import annotations
 
 import logging
@@ -7,23 +8,27 @@ from aiogram.filters import BaseFilter, Command
 from aiogram.types import CallbackQuery, Message
 
 from app.config import Settings
+from app.db.models import OperatorSession
 from app.db.session import SessionLocal
 from app.filters.roles import IsOwner
-from app.keyboards.owner import (
-    broadcast_button_selection_keyboard,
-    broadcast_cancel_keyboard,
-    broadcast_confirm_keyboard,
-    broadcast_preview_keyboard,
-    broadcast_report_keyboard,
-    model_selection_keyboard,
-    owner_panel_keyboard,
+from app.handlers.customer import cancel_command
+from app.keyboards.constants import (
+    OWNER_BACK,
+    OWNER_BROADCAST,
+    OWNER_BROADCAST_HISTORY,
+    OWNER_CANCEL,
+    OWNER_CHOOSE_MODEL,
+    OWNER_STATS,
+    OWNER_TICKETS,
+)
+from app.keyboards.inline import (
     owner_ticket_keyboard,
 )
 from app.services.authorization_service import AuthorizationService
 from app.services.broadcast_service import BroadcastService
-from app.services.settings_service import SettingsService
 from app.services.statistics_service import StatisticsService
 from app.services.ticket_service import TicketService
+from app.services.ui_state_service import UIStateService
 from app.utils.enums import (
     BroadcastButtonSelection,
     OwnerWorkflowState,
@@ -45,19 +50,17 @@ class IsOwnerBroadcasting(BaseFilter):
         if message.from_user is None or not authorization.is_owner(message.from_user.id):
             return False
         async with SessionLocal() as session:
-            return (
-                await broadcast_service.active_owner_state(
-                    session, owner_telegram_id=message.from_user.id
-                )
-                is not None
+            state = await broadcast_service.active_owner_state(
+                session, owner_telegram_id=message.from_user.id
             )
+            return state == OwnerWorkflowState.CREATING_BROADCAST_CONTENT.value
 
 
 @router.message(IsOwner(), Command("admin"))
 async def admin_panel(
     message: Message,
-    authorization: AuthorizationService,
-    settings_service: SettingsService,
+    bot: Bot,
+    ui_state_service: UIStateService,
 ) -> None:
     if message.from_user is None:
         return
@@ -66,71 +69,224 @@ async def admin_panel(
         message.from_user.id,
     )
     async with SessionLocal() as session:
-        active_model = await settings_service.get_active_model(session)
-    await message.answer(
-        f"Панель владельца\nАктивная модель: {active_model}",
-        reply_markup=owner_panel_keyboard(),
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id, reason="admin_command"
+        )
+
+
+@router.message(IsOwner(), F.text == OWNER_CHOOSE_MODEL, F.chat.type == "private")
+async def owner_models_text(
+    message: Message,
+    bot: Bot,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+    async with SessionLocal() as session, session.begin():
+        op_session = await session.get(OperatorSession, message.from_user.id)
+        if op_session is None:
+            op_session = OperatorSession(operator_telegram_id=message.from_user.id)
+            session.add(op_session)
+        op_session.workflow_state = "MODEL_SELECTION"
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id, reason="owner_choose_model_text"
+        )
+
+
+@router.message(IsOwner(), F.text == OWNER_STATS, F.chat.type == "private")
+async def owner_stats_text(
+    message: Message,
+    bot: Bot,
+    statistics_service: StatisticsService,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+    async with SessionLocal() as session:
+        stats = await statistics_service.owner_stats(session)
+        text = _format_owner_stats(stats)
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id, custom_text=text, reason="owner_stats_text"
+        )
+
+
+@router.message(IsOwner(), F.text == OWNER_TICKETS, F.chat.type == "private")
+async def owner_tickets_text(
+    message: Message,
+    bot: Bot,
+    ticket_service: TicketService,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+    async with SessionLocal() as session:
+        tickets = await ticket_service.list_active_tickets(session)
+    if not tickets:
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                message.from_user.id,
+                custom_text="Открытых обращений нет.",
+                reason="owner_tickets_empty",
+            )
+        return
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            message.from_user.id,
+            custom_text="Активные обращения:",
+            reason="owner_tickets_list",
+        )
+    for ticket in tickets:
+        await message.answer(
+            _format_ticket_card(ticket),
+            reply_markup=owner_ticket_keyboard(
+                ticket.id, can_claim=ticket.status == TicketStatus.OPEN.value
+            ),
+        )
+
+
+@router.message(IsOwner(), F.text == OWNER_BROADCAST, F.chat.type == "private")
+async def owner_broadcast_text(
+    message: Message,
+    bot: Bot,
+    broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+    async with SessionLocal() as session, session.begin():
+        await broadcast_service.start_draft(session, owner_telegram_id=message.from_user.id)
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id, reason="owner_broadcast_start"
+        )
+
+
+@router.message(IsOwner(), F.text == OWNER_BROADCAST_HISTORY, F.chat.type == "private")
+async def owner_broadcast_history_text(
+    message: Message,
+    bot: Bot,
+    broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
+) -> None:
+    if message.from_user is None:
+        return
+    async with SessionLocal() as session:
+        broadcasts = await broadcast_service.recent_broadcasts(session)
+    if not broadcasts:
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                message.from_user.id,
+                custom_text="История рассылок пока пуста.",
+                reason="owner_broadcast_history_empty",
+            )
+        return
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            message.from_user.id,
+            custom_text="История рассылок:",
+            reason="owner_broadcast_history_list",
+        )
+    for broadcast in broadcasts:
+        await message.answer(
+            _format_broadcast_history_item(broadcast),
+            reply_markup=owner_ticket_keyboard(broadcast.id, can_claim=False)
+            if False
+            else None,  # keep simple
+        )
+
+
+@router.message(IsOwner(), F.text.in_({OWNER_CANCEL, OWNER_BACK}), F.chat.type == "private")
+async def owner_cancel_text_button(
+    message: Message,
+    bot: Bot,
+    authorization: AuthorizationService,
+    ticket_service: TicketService,
+    broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
+) -> None:
+    await cancel_command(
+        message, bot, authorization, ticket_service, broadcast_service, ui_state_service
     )
 
 
 @router.callback_query(IsOwner(), F.data == "owner:panel")
 async def owner_panel_callback(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
-    settings_service: SettingsService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
+    async with SessionLocal() as session, session.begin():
+        op_session = await session.get(OperatorSession, callback.from_user.id)
+        if op_session:
+            op_session.workflow_state = None
     async with SessionLocal() as session:
-        active_model = await settings_service.get_active_model(session)
-    await callback.message.edit_text(
-        f"Панель владельца\nАктивная модель: {active_model}",
-        reply_markup=owner_panel_keyboard(),
-    )
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id, reason="owner_panel_callback"
+        )
     await callback.answer()
 
 
 @router.callback_query(IsOwner(), F.data == "owner:models")
 async def owner_models(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
-    settings_service: SettingsService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
+    async with SessionLocal() as session, session.begin():
+        op_session = await session.get(OperatorSession, callback.from_user.id)
+        if op_session:
+            op_session.workflow_state = "MODEL_SELECTION"
     async with SessionLocal() as session:
-        active_model = await settings_service.get_active_model(session)
-    await callback.message.edit_text(
-        f"Выберите модель AI\nАктивная модель: {active_model}",
-        reply_markup=model_selection_keyboard(active_model),
-    )
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id, reason="owner_models_callback"
+        )
     await callback.answer()
 
 
 @router.callback_query(IsOwner(), F.data == "owner:stats")
 async def owner_stats(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     statistics_service: StatisticsService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
     async with SessionLocal() as session:
         stats = await statistics_service.owner_stats(session)
-    await callback.message.edit_text(
-        _format_owner_stats(stats), reply_markup=owner_panel_keyboard()
-    )
+        text = _format_owner_stats(stats)
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id, custom_text=text, reason="owner_stats_callback"
+        )
     await callback.answer()
 
 
 @router.callback_query(IsOwner(), F.data == "owner:open_tickets")
 async def owner_open_tickets(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     ticket_service: TicketService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
@@ -138,14 +294,24 @@ async def owner_open_tickets(
     async with SessionLocal() as session:
         tickets = await ticket_service.list_active_tickets(session)
     if not tickets:
-        await callback.message.edit_text(
-            "Открытых обращений нет.", reply_markup=owner_panel_keyboard()
-        )
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                callback.from_user.id,
+                custom_text="Открытых обращений нет.",
+                reason="owner_open_tickets_callback_empty",
+            )
         await callback.answer()
         return
-    await callback.message.edit_text(
-        "Активные обращения отправлены ниже.", reply_markup=owner_panel_keyboard()
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            custom_text="Активные обращения отправлены ниже.",
+            reason="owner_open_tickets_callback_list",
+        )
     for ticket in tickets:
         await callback.message.answer(
             _format_ticket_card(ticket),
@@ -159,27 +325,30 @@ async def owner_open_tickets(
 @router.callback_query(IsOwner(), F.data == "broadcast:start")
 async def broadcast_start(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
     async with SessionLocal() as session, session.begin():
         await broadcast_service.start_draft(session, owner_telegram_id=callback.from_user.id)
-    await callback.message.answer(
-        "Отправьте сообщение для рассылки. Можно отправить текст, фото, видео, "
-        "документ или файл с подписью.",
-        reply_markup=broadcast_cancel_keyboard(),
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id, reason="owner_broadcast_start_callback"
+        )
     await callback.answer()
 
 
 @router.callback_query(IsOwner(), F.data == "broadcast:history")
 async def broadcast_history(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
@@ -187,11 +356,26 @@ async def broadcast_history(
     async with SessionLocal() as session:
         broadcasts = await broadcast_service.recent_broadcasts(session)
     if not broadcasts:
-        await callback.message.answer(
-            "История рассылок пока пуста.", reply_markup=owner_panel_keyboard()
-        )
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                callback.from_user.id,
+                custom_text="История рассылок пока пуста.",
+                reason="owner_broadcast_history_callback_empty",
+            )
         await callback.answer()
         return
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            custom_text="История рассылок:",
+            reason="owner_broadcast_history_callback_list",
+        )
+    from app.keyboards.inline import broadcast_report_keyboard
+
     for broadcast in broadcasts:
         await callback.message.answer(
             _format_broadcast_history_item(broadcast),
@@ -203,8 +387,10 @@ async def broadcast_history(
 @router.callback_query(IsOwner(), F.data == "broadcast:cancel")
 async def broadcast_cancel(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
@@ -213,25 +399,34 @@ async def broadcast_cancel(
         await broadcast_service.cancel_active_draft(
             session, owner_telegram_id=callback.from_user.id
         )
-    await callback.message.answer("Рассылка отменена.", reply_markup=owner_panel_keyboard())
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            custom_text="Рассылка отменена.",
+            reason="owner_broadcast_cancel_callback",
+        )
     await callback.answer()
 
 
 @router.callback_query(IsOwner(), F.data == "broadcast:restart")
 async def broadcast_restart(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
         return
     async with SessionLocal() as session, session.begin():
         await broadcast_service.start_draft(session, owner_telegram_id=callback.from_user.id)
-    await callback.message.answer(
-        "Отправьте новое сообщение для рассылки.",
-        reply_markup=broadcast_cancel_keyboard(),
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id, reason="owner_broadcast_restart_callback"
+        )
     await callback.answer()
 
 
@@ -241,6 +436,7 @@ async def broadcast_buttons(
     bot: Bot,
     authorization: AuthorizationService,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or callback.data is None:
         return
@@ -273,9 +469,10 @@ async def broadcast_buttons(
         except (AuthorizationError, TicketStateError) as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-    await callback.message.answer(
-        "Предпросмотр рассылки:", reply_markup=broadcast_preview_keyboard()
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id, reason="owner_broadcast_buttons_selected"
+        )
     await callback.answer()
 
 
@@ -299,7 +496,9 @@ async def broadcast_test(
         await broadcast_service.send_test(bot, session, broadcast=broadcast)
     await callback.message.answer(
         "Тест отправлен вам. Черновик сохранён.",
-        reply_markup=broadcast_preview_keyboard(),
+        reply_markup=owner_ticket_keyboard(broadcast.id, can_claim=False)
+        if False
+        else None,  # keep clean
     )
     await callback.answer()
 
@@ -307,8 +506,10 @@ async def broadcast_test(
 @router.callback_query(IsOwner(), F.data == "broadcast:send_all")
 async def broadcast_send_all(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.is_owner(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
@@ -327,10 +528,10 @@ async def broadcast_send_all(
         except TicketStateError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-    await callback.message.answer(
-        _format_broadcast_confirmation(broadcast, recipient_count),
-        reply_markup=broadcast_confirm_keyboard(broadcast.id),
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, callback.from_user.id, reason="owner_broadcast_send_all_callback"
+        )
     await callback.answer()
 
 
@@ -340,6 +541,7 @@ async def broadcast_confirm(
     bot: Bot,
     authorization: AuthorizationService,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or callback.data is None:
         return
@@ -361,11 +563,14 @@ async def broadcast_confirm(
             await callback.answer(str(exc), show_alert=True)
             return
     broadcast_service.launch_sending_job(bot, broadcast_id=broadcast.id)
-    await callback.message.answer(
-        f"Рассылка #{broadcast.id} поставлена в отправку. "
-        f"Получателей: {broadcast.recipient_count}.",
-        reply_markup=owner_panel_keyboard(),
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            custom_text=f"Рассылка #{broadcast.id} поставлена в отправку. Получателей: {broadcast.recipient_count}.",
+            reason="owner_broadcast_confirm_callback",
+        )
     await callback.answer("Отправка началась")
 
 
@@ -398,46 +603,58 @@ async def broadcast_report(
     await callback.answer()
 
 
-@router.message(IsOwnerBroadcasting(), F.text == "❌ Отмена", F.chat.type == "private")
-async def broadcast_cancel_message(message: Message, broadcast_service: BroadcastService) -> None:
+@router.message(IsOwnerBroadcasting(), F.text == OWNER_CANCEL, F.chat.type == "private")
+async def broadcast_cancel_message(
+    message: Message,
+    bot: Bot,
+    broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
+) -> None:
     if message.from_user is None:
         return
     async with SessionLocal() as session, session.begin():
         await broadcast_service.cancel_active_draft(session, owner_telegram_id=message.from_user.id)
-    await message.answer("Рассылка отменена.", reply_markup=owner_panel_keyboard())
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            message.from_user.id,
+            custom_text="Рассылка отменена.",
+            reason="owner_broadcast_cancel_text_message",
+        )
 
 
 @router.message(IsOwnerBroadcasting(), F.chat.type == "private")
 async def broadcast_capture_message(
     message: Message,
+    bot: Bot,
     settings: Settings,
     broadcast_service: BroadcastService,
+    ui_state_service: UIStateService,
 ) -> None:
     if message.from_user is None:
         return
+    if message.text in {OWNER_CANCEL, OWNER_BACK} or (
+        message.text and message.text.startswith("/")
+    ):
+        return
+
     async with SessionLocal() as session, session.begin():
-        state = await broadcast_service.active_owner_state(
-            session, owner_telegram_id=message.from_user.id
-        )
-        if state != OwnerWorkflowState.CREATING_BROADCAST_CONTENT.value:
-            appended = await broadcast_service.append_album_message(
-                session, owner_telegram_id=message.from_user.id, message=message
-            )
-            if appended:
-                return
-            await message.answer("Выберите действие с текущим черновиком.")
-            return
         try:
-            broadcast = await broadcast_service.capture_content(
+            await broadcast_service.capture_content(
                 session, owner_telegram_id=message.from_user.id, message=message
             )
         except UnsupportedRelayContentError as exc:
-            await message.answer(str(exc), reply_markup=broadcast_cancel_keyboard())
+            await message.answer(str(exc))
+            await ui_state_service.show_current_menu(
+                bot, session, message.from_user.id, reason="unsupported_broadcast_content"
+            )
             return
-    await message.answer(
-        f"Черновик #{broadcast.id} сохранён.\nДобавить кнопки к сообщению?",
-        reply_markup=broadcast_button_selection_keyboard(settings),
-    )
+
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot, session, message.from_user.id, reason="broadcast_content_captured"
+        )
 
 
 def _format_owner_stats(stats: dict) -> str:
@@ -485,21 +702,4 @@ def _format_broadcast_history_item(broadcast) -> str:
         f"Доставлено: {broadcast.delivered_count}\n"
         f"Ошибок: {broadcast.failed_count}\n"
         f"Недоступны: {broadcast.blocked_count}"
-    )
-
-
-def _format_broadcast_confirmation(broadcast, recipient_count: int) -> str:
-    buttons = {
-        BroadcastButtonSelection.NONE.value: "без кнопок",
-        BroadcastButtonSelection.INSTAGRAM.value: "Instagram",
-        BroadcastButtonSelection.SITE.value: "официальный сайт",
-        BroadcastButtonSelection.BOTH.value: "Instagram + сайт",
-    }.get(broadcast.button_selection, "без кнопок")
-    preview = (broadcast.content_preview or "Без текста")[:500]
-    return (
-        "Подтвердите массовую отправку.\n\n"
-        f"Получателей: {recipient_count}\n"
-        f"Сообщение: {preview}\n"
-        f"Кнопки: {buttons}\n\n"
-        "После подтверждения сообщение будет отправлено клиентам."
     )

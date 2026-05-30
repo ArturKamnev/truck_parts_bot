@@ -159,8 +159,7 @@ class TicketService:
         source_chat_id: int | None = None,
         source_message_id: int | None = None,
         media_group_id: str | None = None,
-        delivery_status: TicketMessageDeliveryStatus
-        | str = TicketMessageDeliveryStatus.STORED,
+        delivery_status: TicketMessageDeliveryStatus | str = TicketMessageDeliveryStatus.STORED,
     ) -> Ticket:
         active_ticket = await self.get_active_ticket(session, customer_id=customer.id)
         if active_ticket is not None:
@@ -410,8 +409,7 @@ class TicketService:
         source_message_id: int | None = None,
         text_preview: str | None = None,
         media_group_id: str | None = None,
-        delivery_status: TicketMessageDeliveryStatus
-        | str = TicketMessageDeliveryStatus.STORED,
+        delivery_status: TicketMessageDeliveryStatus | str = TicketMessageDeliveryStatus.STORED,
     ) -> TicketMessage:
         if isinstance(content_type, TicketMessageContentType):
             content_type_value = content_type.value

@@ -1,34 +1,39 @@
 from __future__ import annotations
 
+import logging
+
 from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery
 
 from app.config import AVAILABLE_MODELS
+from app.db.models import OperatorSession
+
+# ruff: noqa: E501
 from app.db.session import SessionLocal
 from app.filters.roles import IsOwner, IsSupport
-from app.keyboards.customer import customer_keyboard
-from app.keyboards.manager import (
+from app.keyboards.inline import (
     active_ticket_keyboard,
-    manager_keyboard,
-    notification_keyboard,
-    ticket_chat_keyboard,
 )
-from app.keyboards.owner import model_id_by_index, model_selection_keyboard
+from app.keyboards.owner import model_id_by_index
 from app.services.authorization_service import AuthorizationService
 from app.services.relay_service import RelayService
 from app.services.settings_service import SettingsService
 from app.services.ticket_service import TicketService
-from app.utils.enums import TicketStatus
+from app.services.ui_state_service import UIStateService
+from app.utils.enums import CustomerMode, TicketStatus
 from app.utils.exceptions import AuthorizationError, TicketStateError
 
+logger = logging.getLogger(__name__)
 router = Router(name="callbacks")
 
 
 @router.callback_query(IsSupport(), F.data == "manager:active")
 async def manager_active_callback(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     ticket_service: TicketService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or not authorization.can_use_support_tools(callback.from_user.id):
         await callback.answer("Недостаточно прав", show_alert=True)
@@ -41,9 +46,25 @@ async def manager_active_callback(
                 session, manager_telegram_id=callback.from_user.id
             )
     if not tickets:
-        await callback.message.answer("Активных диалогов нет.", reply_markup=manager_keyboard())
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                callback.from_user.id,
+                custom_text="Активных диалогов нет.",
+                reason="manager_active_chats_callback_empty",
+            )
         await callback.answer()
         return
+
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            custom_text="Активные диалоги:",
+            reason="manager_active_chats_callback_list",
+        )
     for ticket in tickets:
         await callback.message.answer(
             f"Обращение #{ticket.id}: {ticket.status}",
@@ -55,7 +76,9 @@ async def manager_active_callback(
 @router.callback_query(IsSupport(), F.data == "operator:exit_reply")
 async def operator_exit_reply(
     callback: CallbackQuery,
+    bot: Bot,
     ticket_service: TicketService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None:
         return
@@ -63,17 +86,23 @@ async def operator_exit_reply(
         await ticket_service.clear_selected_ticket(
             session, operator_telegram_id=callback.from_user.id
         )
-    await callback.message.answer(
-        "Режим ответа выключен. Сообщения больше не будут отправляться клиенту.",
-        reply_markup=manager_keyboard(),
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            custom_text="Режим ответа выключен. Сообщения больше не будут отправляться клиенту.",
+            reason="operator_exit_reply_callback",
+        )
     await callback.answer()
 
 
 @router.callback_query(IsSupport(), F.data.startswith("manager:notify:"))
 async def manager_notifications_callback(
     callback: CallbackQuery,
+    bot: Bot,
     ticket_service: TicketService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or callback.data is None:
         return
@@ -83,10 +112,14 @@ async def manager_notifications_callback(
             session, manager_telegram_id=callback.from_user.id, enabled=enabled
         )
     status = "включены" if enabled else "выключены"
-    await callback.message.answer(
-        f"Уведомления о новых обращениях {status}.",
-        reply_markup=notification_keyboard(enabled),
-    )
+    async with SessionLocal() as session:
+        await ui_state_service.show_current_menu(
+            bot,
+            session,
+            callback.from_user.id,
+            custom_text=f"Уведомления о новых обращениях {status}.",
+            reason="manager_notifications_callback",
+        )
     await callback.answer()
 
 
@@ -97,6 +130,7 @@ async def ticket_callback(
     ticket_service: TicketService,
     authorization: AuthorizationService,
     relay_service: RelayService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or callback.data is None:
         return
@@ -111,74 +145,113 @@ async def ticket_callback(
     action = parts[1]
     ticket_id = int(parts[2])
 
-    async with SessionLocal() as session, session.begin():
-        try:
+    try:
+        async with SessionLocal() as session, session.begin():
+            ticket = await ticket_service.get_ticket(session, ticket_id=ticket_id)
             if action == "claim":
-                ticket = await ticket_service.claim_ticket(
+                if ticket.status != TicketStatus.OPEN.value:
+                    raise TicketStateError("Это обращение уже взял другой менеджер.")
+                await ticket_service.claim_ticket(
                     session,
                     ticket_id=ticket_id,
                     manager_telegram_id=callback.from_user.id,
                 )
-                await bot.send_message(
-                    chat_id=ticket.customer.telegram_user_id,
-                    text=(
-                        "К вашему обращению подключился менеджер. "
-                        "Теперь вы можете общаться здесь и отправлять файлы."
-                    ),
+                try:
+                    await bot.send_message(
+                        chat_id=ticket.customer.telegram_user_id,
+                        text=(
+                            "К вашему обращению подключился менеджер. "
+                            "Теперь вы можете общаться здесь и отправлять файлы."
+                        ),
+                    )
+                except Exception:
+                    pass
+                # Update customer keyboard first
+                await ui_state_service.show_current_menu(
+                    bot, session, ticket.customer.telegram_user_id, reason="ticket_claimed_customer"
                 )
-                await callback.message.answer(
-                    await _ticket_chat_text(session, ticket_service, ticket_id=ticket.id),
-                    reply_markup=ticket_chat_keyboard(ticket.id),
+
+                # Update manager keyboard
+                await ui_state_service.show_current_menu(
+                    bot, session, callback.from_user.id, reason="ticket_claimed_manager"
                 )
                 await callback.answer("Обращение взято")
+
             elif action == "history":
-                ticket = await ticket_service.get_ticket(session, ticket_id=ticket_id)
                 if not ticket_service.can_view_manager_ticket(ticket, callback.from_user.id):
                     raise AuthorizationError("Недостаточно прав")
                 await relay_service.copy_ticket_history_to_chat(
                     bot, session, ticket_id=ticket.id, destination_chat_id=callback.from_user.id
                 )
                 await callback.answer()
+
             elif action == "open":
-                ticket = await ticket_service.get_ticket(session, ticket_id=ticket_id)
                 if not ticket_service.can_view_manager_ticket(ticket, callback.from_user.id):
                     raise AuthorizationError("Недостаточно прав")
                 if ticket.status in {TicketStatus.CLAIMED.value, TicketStatus.OPEN.value}:
                     await ticket_service.select_ticket(
                         session, operator_telegram_id=callback.from_user.id, ticket=ticket
                     )
-                    await callback.message.answer(
-                        await _ticket_chat_text(session, ticket_service, ticket_id=ticket.id),
-                        reply_markup=ticket_chat_keyboard(ticket.id),
-                    )
+                await ui_state_service.show_current_menu(
+                    bot, session, callback.from_user.id, reason="ticket_open_manager"
+                )
                 await callback.answer()
+
             elif action == "close":
-                ticket = await ticket_service.close_ticket(
+                if ticket.status not in {TicketStatus.CLAIMED.value, TicketStatus.OPEN.value}:
+                    raise TicketStateError("Обращение уже закрыто.")
+                await ticket_service.close_ticket(
                     session,
                     ticket_id=ticket_id,
                     actor_telegram_id=callback.from_user.id,
                 )
-                await bot.send_message(
-                    chat_id=ticket.customer.telegram_user_id,
-                    text=(
-                        "Ваш вопрос закрыт менеджером. "
-                        "Вы снова можете задавать вопросы AI-помощнику."
-                    ),
-                    reply_markup=customer_keyboard(),
+                try:
+                    await bot.send_message(
+                        chat_id=ticket.customer.telegram_user_id,
+                        text=(
+                            "Ваш вопрос закрыт менеджером. "
+                            "Вы снова можете задавать вопросы AI-помощнику."
+                        ),
+                        reply_markup=ui_state_service.keyboard_service.get_customer_keyboard(
+                            CustomerMode.AI_CHAT.value, ticket.customer.broadcasts_enabled
+                        ),
+                    )
+                except Exception:
+                    pass
+                # Update customer keyboard
+                await ui_state_service.show_current_menu(
+                    bot, session, ticket.customer.telegram_user_id, reason="ticket_closed_customer"
                 )
-                await callback.message.answer("Обращение закрыто.", reply_markup=manager_keyboard())
+                # Update manager keyboard
+                await ui_state_service.show_current_menu(
+                    bot,
+                    session,
+                    callback.from_user.id,
+                    custom_text=f"Обращение #{ticket_id} закрыто.",
+                    reason="ticket_closed_manager",
+                )
                 await callback.answer("Закрыто")
             else:
                 await callback.answer("Неизвестное действие", show_alert=True)
-        except (AuthorizationError, TicketStateError) as exc:
-            await callback.answer(str(exc), show_alert=True)
+    except (AuthorizationError, TicketStateError) as exc:
+        await callback.answer(str(exc), show_alert=True)
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                callback.from_user.id,
+                message=callback.message,
+                reason="ticket_callback_error",
+            )
 
 
 @router.callback_query(IsOwner(), F.data.startswith("owner:model:"))
 async def switch_model_callback(
     callback: CallbackQuery,
+    bot: Bot,
     authorization: AuthorizationService,
     settings_service: SettingsService,
+    ui_state_service: UIStateService,
 ) -> None:
     if callback.from_user is None or callback.data is None:
         return
@@ -194,35 +267,33 @@ async def switch_model_callback(
         await callback.answer("Некорректная модель", show_alert=True)
         return
 
-    async with SessionLocal() as session, session.begin():
-        active_model = await settings_service.switch_active_model(
-            session,
-            actor_telegram_id=callback.from_user.id,
-            model_id=model_id,
-        )
-    await callback.message.edit_text(
-        f"Активная модель обновлена:\n{AVAILABLE_MODELS[active_model]}",
-        reply_markup=model_selection_keyboard(active_model),
-    )
-    await callback.answer("Модель обновлена")
-
-
-async def _ticket_chat_text(session, ticket_service: TicketService, *, ticket_id: int) -> str:
-    ticket = await ticket_service.get_ticket(session, ticket_id=ticket_id)
-    messages = await ticket_service.get_recent_ticket_messages(
-        session, ticket_id=ticket.id, limit=6
-    )
-    username = f" @{ticket.customer.username}" if ticket.customer.username else ""
-    status = "В работе" if ticket.status == TicketStatus.CLAIMED.value else "Открыто"
-    history = "\n".join(
-        f"{message.sender_type}: {message.text_preview or message.content}" for message in messages
-    )
-    if not history:
-        history = "История обращения пока пуста."
-    return (
-        f"Вы отвечаете клиенту по обращению #{ticket.id}. "
-        "Все отправленные сейчас сообщения и файлы будут переданы этому клиенту.\n\n"
-        f"Клиент: {ticket.customer.first_name or ticket.customer.telegram_user_id}{username}\n"
-        f"Статус: {status}\n\n"
-        f"Последние сообщения:\n{history[:2000]}"
-    )
+    try:
+        async with SessionLocal() as session, session.begin():
+            active_model = await settings_service.switch_active_model(
+                session,
+                actor_telegram_id=callback.from_user.id,
+                model_id=model_id,
+            )
+            # Clear owner workflow state when selection is finalized
+            op_session = await session.get(OperatorSession, callback.from_user.id)
+            if op_session:
+                op_session.workflow_state = None
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                callback.from_user.id,
+                custom_text=f"Активная модель обновлена:\n{AVAILABLE_MODELS[active_model]}",
+                reason="owner_model_switched",
+            )
+        await callback.answer("Модель обновлена")
+    except Exception as exc:
+        await callback.answer(str(exc), show_alert=True)
+        async with SessionLocal() as session:
+            await ui_state_service.show_current_menu(
+                bot,
+                session,
+                callback.from_user.id,
+                message=callback.message,
+                reason="owner_model_switch_error",
+            )

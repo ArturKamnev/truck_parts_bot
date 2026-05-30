@@ -36,9 +36,7 @@ class Settings(BaseSettings):
         default=0.8, ge=0.1, le=10.0, alias="AI_STREAM_UPDATE_INTERVAL_SECONDS"
     )
     ai_stream_min_chars: int = Field(default=80, ge=1, le=1000, alias="AI_STREAM_MIN_CHARS")
-    ai_stream_use_telegram_draft: bool = Field(
-        default=True, alias="AI_STREAM_USE_TELEGRAM_DRAFT"
-    )
+    ai_stream_use_telegram_draft: bool = Field(default=True, alias="AI_STREAM_USE_TELEGRAM_DRAFT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     instagram_url: str | None = Field(default=None, alias="INSTAGRAM_URL")
     official_site_url: str | None = Field(default=None, alias="OFFICIAL_SITE_URL")

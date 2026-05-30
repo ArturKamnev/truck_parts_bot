@@ -12,11 +12,13 @@ from app.services.ai_service import AIService
 from app.services.ai_streaming_lock import AIStreamingLockRegistry
 from app.services.authorization_service import AuthorizationService
 from app.services.broadcast_service import BroadcastService
+from app.services.keyboard_service import KeyboardService
 from app.services.knowledge_service import KnowledgeService
 from app.services.relay_service import RelayService
 from app.services.settings_service import SettingsService
 from app.services.statistics_service import StatisticsService
 from app.services.ticket_service import TicketService
+from app.services.ui_state_service import UIStateService
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,10 @@ def create_bot_and_dispatcher(settings: Settings) -> tuple[Bot, Dispatcher]:
     relay_service = RelayService(settings, ticket_service, ai_service)
     broadcast_service = BroadcastService(settings, authorization, relay_service)
     statistics_service = StatisticsService()
+    keyboard_service = KeyboardService()
+    ui_state_service = UIStateService(
+        settings, authorization, keyboard_service, ticket_service, settings_service
+    )
 
     dp["settings"] = settings
     dp["authorization"] = authorization
@@ -45,6 +51,8 @@ def create_bot_and_dispatcher(settings: Settings) -> tuple[Bot, Dispatcher]:
     dp["relay_service"] = relay_service
     dp["broadcast_service"] = broadcast_service
     dp["statistics_service"] = statistics_service
+    dp["keyboard_service"] = keyboard_service
+    dp["ui_state_service"] = ui_state_service
 
     dp.include_router(owner.router)
     dp.include_router(callbacks.router)
