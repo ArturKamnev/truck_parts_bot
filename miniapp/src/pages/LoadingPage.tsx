@@ -2,11 +2,23 @@ import React from "react";
 import { AlertCircle, RotateCcw, Shield, Lock, WifiOff } from "lucide-react";
 import { type ApiError } from "../api/client";
 
+export interface DiagnosticsData {
+  apiBaseUrl: string;
+  telegramExists: boolean;
+  webAppExists: boolean;
+  platform: string | null;
+  initDataLength: number;
+  authAttempted: boolean;
+  errorStatus: number | null;
+  errorType: string | null;
+}
+
 interface LoadingPageProps {
   error: ApiError | null;
   onRetry: () => void;
   isDev: boolean;
   onSelectMockRole?: (role: "customer" | "manager" | "owner") => void;
+  diagnostics?: DiagnosticsData | null;
 }
 
 export const LoadingPage: React.FC<LoadingPageProps> = ({
@@ -14,6 +26,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
   onRetry,
   isDev,
   onSelectMockRole,
+  diagnostics,
 }) => {
   return (
     <div
@@ -47,7 +60,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
             <div>
               <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#fff" }}>Session Expired</h2>
               <p style={{ fontSize: "14px", color: "hsl(var(--text-hint-hsl))", maxWidth: "280px", lineHeight: "1.4" }}>
-                Your Telegram security session has expired or is invalid. Please reload the app to authenticate.
+                Сессия Telegram недействительна. Откройте приложение заново из бота.
               </p>
             </div>
             <button
@@ -138,6 +151,39 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
             </p>
           </div>
         </div>
+      )}
+
+      {/* Diagnostics Panel - Shown only when there is an error */}
+      {error && diagnostics && (
+        <details
+          style={{
+            marginTop: "24px",
+            textAlign: "left",
+            width: "100%",
+            maxWidth: "320px",
+            fontFamily: "monospace",
+            fontSize: "11px",
+            backgroundColor: "rgba(255, 255, 255, 0.03)",
+            border: "1px solid hsl(var(--border-hsl))",
+            borderRadius: "var(--radius-sm)",
+            padding: "8px 12px",
+            color: "hsl(var(--text-hint-hsl))",
+          }}
+        >
+          <summary style={{ cursor: "pointer", fontWeight: 600, color: "hsl(var(--accent-hsl))", userSelect: "none" }}>
+            Diagnostics Info
+          </summary>
+          <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div>API Base: {diagnostics.apiBaseUrl}</div>
+            <div>Telegram SDK: {diagnostics.telegramExists ? "Loaded" : "Missing"}</div>
+            <div>WebApp SDK: {diagnostics.webAppExists ? "Available" : "Missing"}</div>
+            <div>Platform: {diagnostics.platform || "N/A"}</div>
+            <div>initData Length: {diagnostics.initDataLength}</div>
+            <div>Auth Attempted: {diagnostics.authAttempted ? "Yes" : "No"}</div>
+            <div>Last Status: {diagnostics.errorStatus !== null ? diagnostics.errorStatus : "None"}</div>
+            <div>Error Type: {diagnostics.errorType || "None"}</div>
+          </div>
+        </details>
       )}
 
       {/* Local Mock Auth Panel - Only shown in development */}

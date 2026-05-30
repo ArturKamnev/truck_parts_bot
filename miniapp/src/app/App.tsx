@@ -5,7 +5,7 @@ import { type UserProfile } from "../api/auth";
 import { clearStoredToken, getStoredToken, setStoredToken, onAuthError, type ApiError } from "../api/client";
 
 // Import Pages & Shell Components
-import { LoadingPage } from "../pages/LoadingPage";
+import { LoadingPage, type DiagnosticsData } from "../pages/LoadingPage";
 import { TopBar } from "../components/TopBar";
 import { CustomerHomePage } from "../pages/CustomerHomePage";
 import { ManagerDashboardPage } from "../pages/ManagerDashboardPage";
@@ -18,10 +18,12 @@ export const App: React.FC = () => {
   const [error, setError] = useState<ApiError | null>(null);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
   const [isMockActive, setIsMockActive] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
 
   const isDev = import.meta.env.DEV;
 
   const handleAuthentication = async (initData: string, fromMock = false) => {
+    setDiagnostics(prev => prev ? { ...prev, authAttempted: true } : null);
     try {
       setLoading(true);
       setError(null);
@@ -32,7 +34,22 @@ export const App: React.FC = () => {
       setProfile(authData.profile);
       setIsMockActive(fromMock);
     } catch (err) {
-      setError(err as ApiError);
+      const apiErr = err as ApiError;
+      setDiagnostics(prev => prev ? {
+        ...prev,
+        errorStatus: apiErr.status,
+        errorType: apiErr.message || "Authentication Failed"
+      } : null);
+
+      let errMsg = "Не удалось подключиться к серверу Mini App.";
+      if (apiErr.status === 401 || apiErr.status === 403) {
+        errMsg = "Сессия Telegram недействительна. Откройте приложение заново из бота.";
+      }
+
+      setError({
+        status: apiErr.status,
+        message: errMsg,
+      });
       clearStoredToken();
     } finally {
       setLoading(false);
@@ -44,26 +61,47 @@ export const App: React.FC = () => {
     const webApp = getTelegramWebApp();
     const storedToken = getStoredToken();
 
+    setError(null);
+    setLoading(true);
+
+    const hasTg = typeof window !== "undefined" && !!window.Telegram;
+    const hasWebApp = !!webApp;
+    const initDataLen = webApp?.initData ? webApp.initData.length : 0;
+    const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
+
+    const currentDiagnostics: DiagnosticsData = {
+      apiBaseUrl,
+      telegramExists: hasTg,
+      webAppExists: hasWebApp,
+      platform: (webApp?.initDataUnsafe as any)?.platform || (webApp as any)?.platform || null,
+      initDataLength: initDataLen,
+      authAttempted: false,
+      errorStatus: null,
+      errorType: null,
+    };
+    setDiagnostics(currentDiagnostics);
+
     if (storedToken) {
       try {
-        setLoading(true);
-        setError(null);
         // Load current profile using the stored session token
         const userProfile = await getMe();
         setProfile(userProfile);
         // If it starts with 'mock_', mark mock mode active
         setIsMockActive(storedToken.includes(".mock_") || !webApp);
+        setLoading(false);
+        return;
       } catch (err) {
         // Stale or expired token
         clearStoredToken();
-        setError(err as ApiError);
-      } finally {
-        setLoading(false);
+        const apiErr = err as ApiError;
+        currentDiagnostics.errorStatus = apiErr.status;
+        currentDiagnostics.errorType = apiErr.message || "Token Session Validation Failed";
+        setDiagnostics({ ...currentDiagnostics });
+        // Fall through to try initData authorization
       }
-      return;
     }
 
-    // No stored token: check for Telegram initData
+    // Check for Telegram initData
     if (webApp && webApp.initData) {
       await handleAuthentication(webApp.initData, false);
     } else {
@@ -75,7 +113,7 @@ export const App: React.FC = () => {
         // Enforce Telegram client in production
         setError({
           status: 403,
-          message: "Please open this application inside the Telegram Mobile app.",
+          message: "Откройте приложение через кнопку Mini App в Telegram-боте.",
         });
         setLoading(false);
       }
@@ -85,14 +123,14 @@ export const App: React.FC = () => {
   useEffect(() => {
     initializeApp();
 
-    // Listen for 401 Unauthorized token expirations to log out cleanly
+    // Listen for 401/403 Unauthorized token expirations to log out cleanly
     const unsubscribe = onAuthError(() => {
       setProfile(null);
       setSelectedTicketId(null);
       setIsMockActive(false);
       setError({
         status: 401,
-        message: "Your session has expired. Please reload the app.",
+        message: "Сессия Telegram недействительна. Откройте приложение заново из бота.",
       });
     });
 
@@ -123,6 +161,7 @@ export const App: React.FC = () => {
         onRetry={initializeApp}
         isDev={isDev && !getTelegramWebApp()?.initData}
         onSelectMockRole={handleSelectMockRole}
+        diagnostics={diagnostics}
       />
     );
   }
