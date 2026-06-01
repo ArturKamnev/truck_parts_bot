@@ -57,12 +57,25 @@ button, input, select, textarea {
 
 button {
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.16s cubic-bezier(0.23, 1, 0.32, 1), background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 a {
   color: hsl(var(--accent-hsl));
   text-decoration: none;
+}
+
+.premium-card {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.018)),
+    hsl(var(--card-bg-hsl));
+  border: 1px solid hsl(var(--border-hsl));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Animations & Micro-transitions */
@@ -127,4 +140,3 @@ a {
 .composer-send-btn:hover:not(:disabled) {
   background-color: hsl(var(--accent-hover-hsl)) !important;
 }
-

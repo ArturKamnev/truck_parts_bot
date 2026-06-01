@@ -322,7 +322,7 @@ const ProfileView: React.FC<{
         {isMockActive && (
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
             <span style={{ color: "hsl(var(--warning-hsl))" }}>{t("profile.mode", lang)}:</span>
-            <span style={{ fontWeight: 700, color: "hsl(var(--warning-hsl))" }}>Mock Demo</span>
+            <span style={{ fontWeight: 700, color: "hsl(var(--warning-hsl))" }}>{t("profile.mock_demo", lang)}</span>
           </div>
         )}
       </div>
@@ -364,7 +364,7 @@ const ProfileView: React.FC<{
                   cursor: savingLanguage ? "wait" : "pointer",
                 }}
               >
-                {savingLanguage && active ? "⏳" : label}
+                {savingLanguage && active ? "..." : label}
               </button>
             );
           })}
@@ -1095,7 +1095,7 @@ export const App: React.FC = () => {
         <main style={{ flex: 1, overflow: "hidden" }}>
           {profile.role === "customer" && (
             <>
-              {currentTab === "chats" && <CustomerHomePage onSelectTicket={setSelectedTicketId} locale={locale} />}
+              {currentTab === "chats" && <CustomerHomePage onSelectTicket={setSelectedTicketId} locale={locale} setActiveTab={setCurrentTab} />}
               {currentTab === "new_chat" && (
                 <NewChatView 
                   onSelectTicket={setSelectedTicketId} 

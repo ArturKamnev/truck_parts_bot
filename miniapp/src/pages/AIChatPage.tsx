@@ -131,7 +131,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = ({ locale }) => {
               {t("ai.title", locale)}
             </h2>
             <span style={{ fontSize: "11px", color: "hsl(var(--text-hint-hsl))" }}>
-              Powered by LLM
+              {t("ai.powered_by", locale)}
             </span>
           </div>
         </div>
@@ -246,7 +246,7 @@ export const AIChatPage: React.FC<AIChatPageProps> = ({ locale }) => {
                   >
                     {!isOutgoing && (
                       <span style={{ fontSize: "9px", fontWeight: 700, color: "hsl(var(--accent-hsl))", marginBottom: "2px" }}>
-                        AI ASSISTANT
+                        {t("ai.assistant_label", locale)}
                       </span>
                     )}
                     <span style={{ fontSize: "14px", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>

@@ -74,7 +74,7 @@ export const TopBar: React.FC<TopBarProps> = ({ profile, isMockActive, onLogout,
               animation: "pulse-slow 2s infinite",
             }}
           >
-            DEV MOCK AUTH
+            {t("profile.dev_mock_auth", locale)}
           </div>
         )}
         <button

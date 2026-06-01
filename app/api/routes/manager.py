@@ -24,6 +24,7 @@ from app.api.schemas.tickets import (
     TicketResponse,
     CloseTicketRequest,
     MessageCreateRequest,
+    ManagerOverviewResponse,
 )
 from app.config import Settings, get_settings
 from app.db.models import Ticket, TicketMessage, User
@@ -32,6 +33,7 @@ from app.services.authorization_service import AuthorizationService
 from app.services.media_service import extract_sent_file_ids, send_stored_upload, store_upload
 from aiogram import Bot
 from app.services.ticket_service import TicketService
+from app.services.statistics_service import StatisticsService
 from app.services.ui_state_service import UIStateService
 from app.services.relay_service import RelayService
 from app.utils.enums import TicketMessageDeliveryStatus, TicketMessageSenderType, TicketStatus
@@ -52,6 +54,14 @@ def verify_manager_or_owner_role(session_payload: dict = Depends(get_current_use
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied: Only managers and owners are allowed to access manager endpoints",
+        )
+
+
+def verify_manager_role(session_payload: dict = Depends(get_current_user_session)) -> None:
+    if session_payload["role"] != "manager":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Only managers are allowed to access this overview",
         )
 
 
@@ -86,6 +96,18 @@ async def list_new_tickets(
         )
         for ticket in tickets
     ]
+
+
+@router.get("/overview", response_model=ManagerOverviewResponse, dependencies=[Depends(verify_manager_role)])
+async def get_manager_overview(
+    session_payload: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+) -> ManagerOverviewResponse:
+    overview = await StatisticsService().manager_overview(
+        session,
+        manager_telegram_id=session_payload["telegram_user_id"],
+    )
+    return ManagerOverviewResponse(**overview)
 
 
 @router.get("/tickets/active", response_model=list[TicketResponse], dependencies=[Depends(verify_manager_or_owner_role)])

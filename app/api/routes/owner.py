@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, UTC
+from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, update
@@ -8,16 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import (
+    get_current_user,
     get_current_user_session,
     get_settings_service,
     get_broadcast_service,
+    get_ticket_service,
 )
-from app.api.schemas.tickets import OwnerStatsResponse, TicketResponse
+from app.api.schemas.tickets import (
+    BulkActionRequest,
+    BulkActionResponse,
+    OwnerOverviewResponse,
+    OwnerStatsResponse,
+    TicketResponse,
+)
 from app.config import get_settings, Settings
 from app.db.models import OperatorSession, Ticket, StaffMember, User
 from app.db.session import get_session
 from app.services.media_service import store_upload
 from app.services.statistics_service import StatisticsService
+from app.services.ticket_service import TicketService
 from app.utils.enums import BroadcastButtonSelection, StaffRole, StaffStatus, TicketStatus
 from app.utils.exceptions import AuthorizationError, TicketStateError
 
@@ -167,6 +176,16 @@ async def get_owner_stats(
     stats_service = StatisticsService()
     stats = await stats_service.owner_stats(session)
     return OwnerStatsResponse(**stats)
+
+
+@router.get("/overview", response_model=OwnerOverviewResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def get_owner_overview(
+    session: AsyncSession = Depends(get_session),
+    settings_srv = Depends(get_settings_service),
+) -> OwnerOverviewResponse:
+    active_model = await settings_srv.get_active_model(session)
+    overview = await StatisticsService().owner_overview(session, active_model=active_model)
+    return OwnerOverviewResponse(**overview)
 
 
 @router.get("/managers", response_model=list[StaffMemberResponse], dependencies=[Depends(verify_owner_or_co_owner_role)])
@@ -423,6 +442,92 @@ async def get_manager_statistics(
         telegram_user_id=telegram_user_id,
         tickets_claimed=tickets_claimed,
         tickets_closed=tickets_closed,
+    )
+
+
+@router.post(
+    "/tickets/clear-closed",
+    response_model=BulkActionResponse,
+    dependencies=[Depends(verify_owner_or_co_owner_role)],
+)
+async def clear_closed_tickets_from_view(
+    req: BulkActionRequest,
+    session: AsyncSession = Depends(get_session),
+) -> BulkActionResponse:
+    if not req.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Explicit confirmation is required.",
+        )
+    count = await session.scalar(
+        select(func.count()).select_from(Ticket).where(Ticket.status == TicketStatus.CLOSED.value)
+    ) or 0
+    return BulkActionResponse(
+        affected_count=count,
+        detail="Closed tickets are safe to clear from the Mini App view; database records were preserved.",
+    )
+
+
+@router.post(
+    "/tickets/clear-cancelled",
+    response_model=BulkActionResponse,
+    dependencies=[Depends(verify_owner_or_co_owner_role)],
+)
+async def clear_cancelled_tickets_from_view(
+    req: BulkActionRequest,
+    session: AsyncSession = Depends(get_session),
+) -> BulkActionResponse:
+    if not req.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Explicit confirmation is required.",
+        )
+    count = await session.scalar(
+        select(func.count())
+        .select_from(Ticket)
+        .where(Ticket.status == TicketStatus.CANCELLED_BY_CUSTOMER.value)
+    ) or 0
+    return BulkActionResponse(
+        affected_count=count,
+        detail="Cancelled tickets are safe to clear from the Mini App view; database records were preserved.",
+    )
+
+
+@router.post(
+    "/tickets/close-stale",
+    response_model=BulkActionResponse,
+    dependencies=[Depends(verify_owner_or_co_owner_role)],
+)
+async def close_stale_open_tickets(
+    req: BulkActionRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    ticket_service: TicketService = Depends(get_ticket_service),
+) -> BulkActionResponse:
+    if not req.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Explicit confirmation is required.",
+        )
+    cutoff = datetime.now(UTC) - timedelta(days=req.days)
+    stale_tickets = list(
+        await session.scalars(
+            select(Ticket)
+            .where(Ticket.status == TicketStatus.OPEN.value, Ticket.created_at <= cutoff)
+            .order_by(Ticket.created_at.asc())
+            .limit(100)
+        )
+    )
+    for ticket in stale_tickets:
+        await ticket_service.close_ticket(
+            session,
+            ticket_id=ticket.id,
+            actor_telegram_id=current_user.telegram_user_id,
+        )
+    await session.commit()
+    return BulkActionResponse(
+        affected_count=len(stale_tickets),
+        detail="Stale open tickets were closed through TicketService.",
     )
 
 

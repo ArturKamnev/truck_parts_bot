@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import pytest
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.api.dependencies import create_signed_session_token
 from app.api.main import app
 from app.config import get_settings, Settings
-from app.db.models import Ticket, TicketMessage, User
+from app.db.models import AIMessage, Broadcast, StaffMember, Ticket, TicketMessage, User
 from app.db.session import get_session
-from app.utils.enums import TicketStatus
+from app.utils.enums import AIMessageRole, StaffRole, StaffStatus, TicketStatus
 
 
 @pytest.fixture
@@ -167,6 +167,161 @@ async def test_owner_ticket_endpoints(app_override_session, settings: Settings, 
         assert stats["total_tickets"] == 2
         assert stats["open_tickets"] == 1
         assert stats["claimed_tickets"] == 1
+
+
+@pytest.mark.anyio
+async def test_role_overview_endpoints_and_owner_bulk_permissions(
+    app_override_session,
+    settings: Settings,
+    session,
+) -> None:
+    now = datetime.now(UTC)
+    old = now - timedelta(days=21)
+    owner = User(telegram_user_id=999, username="owner", first_name="Owner", mode="AI_CHAT", last_seen_at=now)
+    manager = User(telegram_user_id=101, username="mgr", first_name="Manager", mode="AI_CHAT", last_seen_at=now)
+    customer = User(
+        telegram_user_id=1001,
+        username="cust",
+        first_name="Customer",
+        mode="MANAGER_CHAT",
+        last_seen_at=now,
+        preferred_language="en",
+        broadcasts_enabled=True,
+    )
+    stale_customer = User(
+        telegram_user_id=1002,
+        username="stale",
+        first_name="Stale",
+        mode="WAITING_MANAGER",
+        last_seen_at=old,
+    )
+    session.add_all([owner, manager, customer, stale_customer])
+    await session.commit()
+    await session.refresh(customer)
+    await session.refresh(stale_customer)
+
+    staff = StaffMember(
+        telegram_user_id=101,
+        role=StaffRole.MANAGER.value,
+        status=StaffStatus.ACTIVE.value,
+        added_by_telegram_id=999,
+    )
+    active_ticket = Ticket(
+        customer_id=customer.id,
+        status=TicketStatus.CLAIMED.value,
+        assigned_manager_telegram_id=101,
+        created_at=old,
+        claimed_at=now,
+    )
+    closed_ticket = Ticket(
+        customer_id=customer.id,
+        status=TicketStatus.CLOSED.value,
+        assigned_manager_telegram_id=101,
+        closed_by_telegram_id=101,
+        created_at=old,
+        claimed_at=old,
+        closed_at=now,
+    )
+    stale_ticket = Ticket(customer_id=stale_customer.id, status=TicketStatus.OPEN.value, created_at=old)
+    session.add_all([staff, active_ticket, closed_ticket, stale_ticket])
+    await session.flush()
+    session.add_all(
+        [
+            TicketMessage(
+                ticket_id=active_ticket.id,
+                sender_type="customer",
+                content_type="text",
+                content="Need help",
+                text_preview="Need help",
+                created_at=now,
+            ),
+            AIMessage(
+                customer_id=customer.id,
+                role=AIMessageRole.USER.value,
+                content="AI question",
+                created_at=now,
+            ),
+            Broadcast(
+                created_by_telegram_id=999,
+                status="COMPLETED",
+                recipient_count=3,
+                delivered_count=2,
+                failed_count=1,
+                blocked_count=0,
+                content_preview="hello",
+            ),
+        ]
+    )
+    await session.commit()
+
+    owner_token = create_signed_session_token(999, "owner", settings.miniapp_session_secret, 3600)
+    manager_token = create_signed_session_token(101, "manager", settings.miniapp_session_secret, 3600)
+    customer_token = create_signed_session_token(1001, "customer", settings.miniapp_session_secret, 3600)
+
+    async with AsyncClient(transport=ASGITransport(app=app_override_session), base_url="http://test") as ac:
+        owner_res = await ac.get(
+            "/api/owner/overview",
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert owner_res.status_code == 200
+        owner_data = owner_res.json()
+        assert owner_data["total_users"] == 4
+        assert owner_data["active_chats"] == 1
+        assert owner_data["pending_chats"] == 1
+        assert owner_data["ai_requests_count"] == 1
+        assert owner_data["broadcast_summary"]["delivered"] == 2
+        assert owner_data["manager_performance"][0]["telegram_user_id"] == 101
+
+        manager_res = await ac.get(
+            "/api/manager/overview",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        assert manager_res.status_code == 200
+        manager_data = manager_res.json()
+        assert manager_data["my_active_chats"] == 1
+        assert manager_data["my_closed_chats"] == 1
+        assert manager_data["pending_replies"] == 1
+
+        customer_res = await ac.get(
+            "/api/customer/overview",
+            headers={"Authorization": f"Bearer {customer_token}"},
+        )
+        assert customer_res.status_code == 200
+        customer_data = customer_res.json()
+        assert customer_data["active_ticket"]["id"] == active_ticket.id
+        assert customer_data["broadcasts_enabled"] is True
+        assert customer_data["closed_chats"] == 1
+
+        denied_res = await ac.get(
+            "/api/owner/overview",
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        assert denied_res.status_code == 403
+
+        denied_bulk = await ac.post(
+            "/api/owner/tickets/close-stale",
+            json={"confirm": True, "days": 14},
+            headers={"Authorization": f"Bearer {manager_token}"},
+        )
+        assert denied_bulk.status_code == 403
+
+        missing_confirm = await ac.post(
+            "/api/owner/tickets/close-stale",
+            json={"confirm": False, "days": 14},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert missing_confirm.status_code == 400
+
+        close_res = await ac.post(
+            "/api/owner/tickets/close-stale",
+            json={"confirm": True, "days": 14},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert close_res.status_code == 200
+        assert close_res.json()["affected_count"] == 1
+
+    await session.refresh(stale_ticket)
+    assert stale_ticket.status == TicketStatus.CLOSED.value
 
 
 @pytest.mark.anyio
@@ -402,4 +557,3 @@ async def test_manager_chat_actions(app_override_session, settings: Settings, se
             headers={"Authorization": f"Bearer {mgra_token}"}
         )
         assert res.status_code == 400
-

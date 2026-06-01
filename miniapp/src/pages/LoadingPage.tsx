@@ -48,7 +48,7 @@ const getActiveLocale = (): string => {
         return parsed.preferred_language;
       }
     }
-  } catch (e) {
+  } catch {
     // ignore
   }
   
@@ -90,7 +90,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
     try {
       const cached = localStorage.getItem("tma_user_profile");
       if (cached) profile = JSON.parse(cached);
-    } catch (e) {}
+    } catch {}
 
     const errorMsg = error?.message || error?.toString();
     const reportText = compileErrorReport(
@@ -400,22 +400,22 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
           }}
         >
           <summary style={{ cursor: "pointer", fontWeight: 600, color: "hsl(var(--accent-hsl))", userSelect: "none" }}>
-            Diagnostics Info
+            {t("loading.diagnostics", locale)}
           </summary>
           <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "4px" }}>
-            <div>API Base: {sanitizeMessage(diagnostics.apiBaseUrl)}</div>
-            <div>Telegram SDK: {diagnostics.telegramExists ? "Yes" : "No"}</div>
-            <div>WebApp SDK: {diagnostics.webAppExists ? "Yes" : "No"}</div>
-            <div>Platform: {diagnostics.platform || "N/A"}</div>
-            <div>initData Length: {diagnostics.initDataLength}</div>
-            <div>Auth Attempted: {diagnostics.authAttempted ? "Yes" : "No"}</div>
-            <div>Last Status: {diagnostics.errorStatus !== null ? diagnostics.errorStatus : "None"}</div>
-            <div>Error Type: {sanitizeMessage(diagnostics.errorType || "None")}</div>
-            <div>Current Role: {diagnostics.currentRole || "None"}</div>
-            <div>Current Locale: {diagnostics.currentLocale || "None"}</div>
-            <div>Current Route: {diagnostics.currentRoute || "/"}</div>
+            <div>{t("loading.api_base", locale)}: {sanitizeMessage(diagnostics.apiBaseUrl)}</div>
+            <div>Telegram SDK: {diagnostics.telegramExists ? t("common.yes", locale) : t("common.no", locale)}</div>
+            <div>WebApp SDK: {diagnostics.webAppExists ? t("common.yes", locale) : t("common.no", locale)}</div>
+            <div>{t("loading.platform", locale)}: {diagnostics.platform || t("stats.not_available", locale)}</div>
+            <div>initData: {diagnostics.initDataLength}</div>
+            <div>{t("loading.auth_attempted", locale)}: {diagnostics.authAttempted ? t("common.yes", locale) : t("common.no", locale)}</div>
+            <div>{t("loading.last_status", locale)}: {diagnostics.errorStatus !== null ? diagnostics.errorStatus : t("stats.not_available", locale)}</div>
+            <div>{t("loading.error_type", locale)}: {sanitizeMessage(diagnostics.errorType || t("stats.not_available", locale))}</div>
+            <div>{t("loading.current_role", locale)}: {diagnostics.currentRole || t("stats.not_available", locale)}</div>
+            <div>{t("loading.current_locale", locale)}: {diagnostics.currentLocale || t("stats.not_available", locale)}</div>
+            <div>{t("loading.current_route", locale)}: {diagnostics.currentRoute || "/"}</div>
             {diagnostics.lastErrorSummary && (
-              <div style={{ color: "#ff7b72" }}>Last Error: {sanitizeMessage(diagnostics.lastErrorSummary)}</div>
+              <div style={{ color: "#ff7b72" }}>{t("loading.last_error", locale)}: {sanitizeMessage(diagnostics.lastErrorSummary)}</div>
             )}
           </div>
         </details>
@@ -441,11 +441,11 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
           <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "hsl(var(--warning-hsl))" }}>
             <Shield size={16} />
             <span style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.05em" }}>
-              LOCAL DEV MOCK ROUTING
+              {t("loading.dev_mock_routing", locale)}
             </span>
           </div>
           <p style={{ fontSize: "11px", color: "hsl(var(--text-hint-hsl))", textAlign: "center", marginBottom: "4px" }}>
-            No Telegram environment detected. Choose a mock role to test the Mini App interfaces:
+            {t("loading.dev_mock_desc", locale)}
           </p>
           <div style={{ display: "flex", gap: "8px", width: "100%" }}>
             {(["customer", "manager", "owner", "co_owner"] as const).map((role) => (
@@ -465,7 +465,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
                   cursor: "pointer",
                 }}
               >
-                {role}
+                {t(`role.${role}`, locale)}
               </button>
             ))}
           </div>

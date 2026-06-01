@@ -47,6 +47,80 @@ export interface OwnerStats {
   avg_first_claim_seconds: number | null;
 }
 
+export interface MetricPoint {
+  label: string;
+  value: number;
+}
+
+export interface TrendPoint {
+  date: string;
+  created: number;
+  closed: number;
+}
+
+export interface ManagerPerformanceItem {
+  telegram_user_id: number;
+  display_name: string;
+  role: string;
+  status: string;
+  active_tickets: number;
+  claimed_tickets: number;
+  closed_tickets: number;
+}
+
+export interface BroadcastSummary {
+  total: number;
+  delivered: number;
+  failed: number;
+  blocked: number;
+  recipients: number;
+}
+
+export interface OwnerOverview {
+  total_users: number;
+  active_users: number;
+  total_tickets: number;
+  open_tickets: number;
+  active_chats: number;
+  closed_tickets: number;
+  cancelled_tickets: number;
+  pending_chats: number;
+  avg_first_claim_seconds: number | null;
+  active_model: string | null;
+  ai_requests_count: number;
+  tickets_by_status: MetricPoint[];
+  ticket_trend: TrendPoint[];
+  manager_performance: ManagerPerformanceItem[];
+  broadcast_summary: BroadcastSummary;
+  language_distribution: MetricPoint[];
+}
+
+export interface ManagerOverview {
+  my_active_chats: number;
+  my_closed_chats: number;
+  my_claimed_chats: number;
+  pending_replies: number;
+  available_queue: number;
+  avg_close_seconds: number | null;
+  tickets_by_status: MetricPoint[];
+  ticket_trend: TrendPoint[];
+}
+
+export interface CustomerOverview {
+  active_ticket: Ticket | null;
+  active_chats: number;
+  saved_chats: number;
+  closed_chats: number;
+  broadcasts_enabled: boolean;
+  total_tickets: number;
+  tickets_by_status: MetricPoint[];
+}
+
+export interface BulkActionResult {
+  affected_count: number;
+  detail: string;
+}
+
 // --- Customer API ---
 export const getCustomerTickets = async (): Promise<Ticket[]> => {
   const tickets = await apiRequest<Ticket[]>("/api/customer/tickets");
@@ -114,6 +188,102 @@ export const getOwnerStats = async (): Promise<OwnerStats> => {
   };
 };
 
+const normalizeMetricPoints = (points: MetricPoint[] | undefined | null): MetricPoint[] =>
+  (points || []).map((point) => ({
+    label: String(point?.label || "unknown"),
+    value: Number(point?.value) || 0,
+  }));
+
+const normalizeTrendPoints = (points: TrendPoint[] | undefined | null): TrendPoint[] =>
+  (points || []).map((point) => ({
+    date: String(point?.date || ""),
+    created: Number(point?.created) || 0,
+    closed: Number(point?.closed) || 0,
+  }));
+
+export const getOwnerOverview = async (): Promise<OwnerOverview> => {
+  const overview = await apiRequest<OwnerOverview>("/api/owner/overview");
+  return {
+    total_users: Number(overview?.total_users) || 0,
+    active_users: Number(overview?.active_users) || 0,
+    total_tickets: Number(overview?.total_tickets) || 0,
+    open_tickets: Number(overview?.open_tickets) || 0,
+    active_chats: Number(overview?.active_chats) || 0,
+    closed_tickets: Number(overview?.closed_tickets) || 0,
+    cancelled_tickets: Number(overview?.cancelled_tickets) || 0,
+    pending_chats: Number(overview?.pending_chats) || 0,
+    avg_first_claim_seconds: overview?.avg_first_claim_seconds !== undefined && overview?.avg_first_claim_seconds !== null ? Number(overview.avg_first_claim_seconds) : null,
+    active_model: overview?.active_model || null,
+    ai_requests_count: Number(overview?.ai_requests_count) || 0,
+    tickets_by_status: normalizeMetricPoints(overview?.tickets_by_status),
+    ticket_trend: normalizeTrendPoints(overview?.ticket_trend),
+    manager_performance: (overview?.manager_performance || []).map((item) => ({
+      telegram_user_id: Number(item?.telegram_user_id) || 0,
+      display_name: String(item?.display_name || item?.telegram_user_id || ""),
+      role: String(item?.role || "manager"),
+      status: String(item?.status || "active"),
+      active_tickets: Number(item?.active_tickets) || 0,
+      claimed_tickets: Number(item?.claimed_tickets) || 0,
+      closed_tickets: Number(item?.closed_tickets) || 0,
+    })),
+    broadcast_summary: {
+      total: Number(overview?.broadcast_summary?.total) || 0,
+      delivered: Number(overview?.broadcast_summary?.delivered) || 0,
+      failed: Number(overview?.broadcast_summary?.failed) || 0,
+      blocked: Number(overview?.broadcast_summary?.blocked) || 0,
+      recipients: Number(overview?.broadcast_summary?.recipients) || 0,
+    },
+    language_distribution: normalizeMetricPoints(overview?.language_distribution),
+  };
+};
+
+export const getManagerOverview = async (): Promise<ManagerOverview> => {
+  const overview = await apiRequest<ManagerOverview>("/api/manager/overview");
+  return {
+    my_active_chats: Number(overview?.my_active_chats) || 0,
+    my_closed_chats: Number(overview?.my_closed_chats) || 0,
+    my_claimed_chats: Number(overview?.my_claimed_chats) || 0,
+    pending_replies: Number(overview?.pending_replies) || 0,
+    available_queue: Number(overview?.available_queue) || 0,
+    avg_close_seconds: overview?.avg_close_seconds !== undefined && overview?.avg_close_seconds !== null ? Number(overview.avg_close_seconds) : null,
+    tickets_by_status: normalizeMetricPoints(overview?.tickets_by_status),
+    ticket_trend: normalizeTrendPoints(overview?.ticket_trend),
+  };
+};
+
+export const getCustomerOverview = async (): Promise<CustomerOverview> => {
+  const overview = await apiRequest<CustomerOverview>("/api/customer/overview");
+  return {
+    active_ticket: overview?.active_ticket ? normalizeTicket(overview.active_ticket) : null,
+    active_chats: Number(overview?.active_chats) || 0,
+    saved_chats: Number(overview?.saved_chats) || 0,
+    closed_chats: Number(overview?.closed_chats) || 0,
+    broadcasts_enabled: Boolean(overview?.broadcasts_enabled),
+    total_tickets: Number(overview?.total_tickets) || 0,
+    tickets_by_status: normalizeMetricPoints(overview?.tickets_by_status),
+  };
+};
+
+const ownerBulkAction = async (path: string, days?: number): Promise<BulkActionResult> => {
+  const result = await apiRequest<BulkActionResult>(path, {
+    method: "POST",
+    body: JSON.stringify({ confirm: true, days }),
+  });
+  return {
+    affected_count: Number(result?.affected_count) || 0,
+    detail: String(result?.detail || ""),
+  };
+};
+
+export const clearClosedTicketsFromView = (): Promise<BulkActionResult> =>
+  ownerBulkAction("/api/owner/tickets/clear-closed");
+
+export const clearCancelledTicketsFromView = (): Promise<BulkActionResult> =>
+  ownerBulkAction("/api/owner/tickets/clear-cancelled");
+
+export const closeStaleOpenTickets = (days = 14): Promise<BulkActionResult> =>
+  ownerBulkAction("/api/owner/tickets/close-stale", days);
+
 // --- Interactive Manager / Owner Actions ---
 export const claimTicket = async (ticketId: number): Promise<Ticket> => {
   const ticket = await apiRequest<Ticket>(`/api/manager/tickets/${ticketId}/claim`, {
@@ -168,7 +338,7 @@ const uploadTicketFile = async (
     try {
       const data = await response.json();
       message = data.detail || message;
-    } catch (err) {
+    } catch {
       // ignore
     }
     throw { status: response.status, message };
@@ -418,7 +588,7 @@ export const setBroadcastAttachment = async (
     try {
       const data = await response.json();
       message = data.detail || message;
-    } catch (err) {
+    } catch {
       // ignore
     }
     throw { status: response.status, message };
@@ -458,5 +628,3 @@ export const cancelBroadcast = async (broadcastId: number): Promise<Broadcast> =
   });
   return normalizeBroadcast(broadcast);
 };
-
-

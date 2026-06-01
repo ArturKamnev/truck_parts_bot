@@ -23,11 +23,13 @@ from app.api.schemas.tickets import (
     TicketResponse,
     CreateTicketRequest,
     MessageCreateRequest,
+    CustomerOverviewResponse,
 )
 from app.config import Settings, get_settings
 from app.db.models import Ticket, TicketMessage, User
 from app.db.session import get_session
 from app.services.media_service import extract_sent_file_ids, send_stored_upload, store_upload
+from app.services.statistics_service import StatisticsService
 from app.utils.enums import TicketMessageDeliveryStatus, TicketMessageSenderType
 from app.utils.exceptions import DuplicateActiveTicketError
 
@@ -79,6 +81,30 @@ async def list_customer_tickets(
         )
         for ticket in tickets
     ]
+
+
+@router.get("/overview", response_model=CustomerOverviewResponse, dependencies=[Depends(verify_customer_role)])
+async def get_customer_overview(
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> CustomerOverviewResponse:
+    overview = await StatisticsService().customer_overview(session, customer=current_user)
+    active_ticket = overview.pop("active_ticket")
+    active_ticket_response = None
+    if active_ticket is not None:
+        active_ticket_response = TicketResponse(
+            id=active_ticket.id,
+            customer_id=active_ticket.customer_id,
+            status=active_ticket.status,
+            assigned_manager_telegram_id=active_ticket.assigned_manager_telegram_id,
+            created_at=active_ticket.created_at,
+            claimed_at=active_ticket.claimed_at,
+            closed_at=active_ticket.closed_at,
+            customer_username=active_ticket.customer.username,
+            customer_first_name=active_ticket.customer.first_name,
+            customer_last_name=active_ticket.customer.last_name,
+        )
+    return CustomerOverviewResponse(**overview, active_ticket=active_ticket_response)
 
 
 @router.get("/tickets/{ticket_id}", response_model=TicketResponse, dependencies=[Depends(verify_customer_role)])
