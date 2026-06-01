@@ -121,10 +121,23 @@ class Settings(BaseSettings):
             if (
                 not self.miniapp_session_secret
                 or self.miniapp_session_secret == "dev_secret_change_me_in_production"
+                or len(self.miniapp_session_secret) < 32
             ):
                 raise ValueError(
                     "MINIAPP_SESSION_SECRET must be set to a secure, unique value in production environment"
                 )
+            if (
+                not self.miniapp_origin
+                or self.miniapp_origin.rstrip("/") == "http://localhost:5173"
+            ):
+                raise ValueError(
+                    "MINIAPP_ORIGIN must be set to the deployed Mini App origin in production"
+                )
+            parsed_origin = urlparse(self.miniapp_origin)
+            if parsed_origin.scheme not in {"https", "http"} or not parsed_origin.netloc:
+                raise ValueError("MINIAPP_ORIGIN must be an absolute http(s) origin")
+            if parsed_origin.path not in {"", "/"} or parsed_origin.query or parsed_origin.fragment:
+                raise ValueError("MINIAPP_ORIGIN must be an origin only, without path/query")
         return self
 
     @property

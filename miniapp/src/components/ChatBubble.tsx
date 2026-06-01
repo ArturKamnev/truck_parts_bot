@@ -2,14 +2,16 @@ import React from "react";
 import { Image, Volume2, Video, FileText } from "lucide-react";
 import { type TicketMessage } from "../api/tickets";
 import { safeTime } from "../utils/normalization";
+import { t } from "../i18n";
 
 interface ChatBubbleProps {
   message: TicketMessage;
   viewerRole: "customer" | "manager" | "owner" | "co_owner";
   onRetry?: (msg: TicketMessage) => void;
+  locale: string;
 }
 
-export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onRetry }) => {
+export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onRetry, locale }) => {
   // Determine alignment
   // If customer is viewing: customer messages are on the right, manager/system on the left.
   // If manager/owner is viewing: manager/system are on the right, customer on the left.
@@ -89,12 +91,12 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
         {/* Sender Label for Managers viewing Client messages */}
         {!isOutgoing && viewerRole !== "customer" && (
           <span style={{ fontSize: "10px", fontWeight: 600, color: "rgba(255, 255, 255, 0.5)", marginBottom: "2px" }}>
-            CLIENT
+            {t("chat.client_label", locale)}
           </span>
         )}
         {!isOutgoing && viewerRole === "customer" && (
           <span style={{ fontSize: "10px", fontWeight: 600, color: "hsl(var(--accent-hsl))", marginBottom: "2px" }}>
-            SUPPORT STAFF
+            {t("chat.support_staff_label", locale)}
           </span>
         )}
 
@@ -116,14 +118,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 {getMediaIcon(message.contentType)}
                 <span style={{ fontWeight: 600, textTransform: "capitalize" }}>
-                  {message.contentType === "photo" ? "Фото" :
-                   message.contentType === "video" ? "Видео" :
-                   message.contentType === "voice" ? "Голосовое сообщение" :
-                   message.contentType === "audio" ? "Аудио" : "Файл/Документ"}
+                  {message.contentType === "photo" ? t("chat.media_photo", locale) :
+                   message.contentType === "video" ? t("chat.media_video", locale) :
+                   message.contentType === "voice" ? t("chat.media_voice", locale) :
+                   message.contentType === "audio" ? t("chat.media_audio", locale) : t("chat.media_document", locale)}
                 </span>
               </div>
               <span style={{ fontSize: "11px", opacity: 0.7 }}>
-                Файл доступен в Telegram-чате с ботом.
+                {t("chat.media_hint", locale)}
               </span>
             </div>
             {message.captionPreview && (
@@ -149,7 +151,7 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
           {message.deliveryStatus === "FAILED" && (
             <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
               <span style={{ fontSize: "9px", color: "#ff4d4d", fontWeight: 700, letterSpacing: "0.03em" }}>
-                ОШИБКА ДОСТАВКИ
+                {t("chat.delivery_failed", locale)}
               </span>
               {onRetry && (
                 <button
@@ -169,14 +171,14 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
                     margin: 0,
                   }}
                 >
-                  ПОВТОРИТЬ
+                  {t("chat.retry_send", locale)}
                 </button>
               )}
             </div>
           )}
           {message.id < 0 && (
             <span style={{ fontSize: "9px", opacity: 0.6, fontStyle: "italic" }}>
-              Отправка...
+              {t("chat.sending", locale)}
             </span>
           )}
           <span

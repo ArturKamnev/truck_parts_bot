@@ -3,14 +3,16 @@ import { LogOut } from "lucide-react";
 import { type UserProfile } from "../api/auth";
 import { RoleBadge } from "./RoleBadge";
 import { getInitials } from "../utils/normalization";
+import { t } from "../i18n";
 
 interface TopBarProps {
   profile: UserProfile;
   isMockActive: boolean;
   onLogout: () => void;
+  locale: string;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ profile, isMockActive, onLogout }) => {
+export const TopBar: React.FC<TopBarProps> = ({ profile, isMockActive, onLogout, locale }) => {
   const displayName = profile.display_name;
   const initial = getInitials(displayName);
 
@@ -85,7 +87,7 @@ export const TopBar: React.FC<TopBarProps> = ({ profile, isMockActive, onLogout 
             alignItems: "center",
             justifyContent: "center",
           }}
-          title="Disconnect Session"
+          title={t("common.logout", locale)}
           onMouseEnter={(e) => (e.currentTarget.style.color = "hsl(var(--danger-hsl))")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "hsl(var(--text-hint-hsl))")}
         >

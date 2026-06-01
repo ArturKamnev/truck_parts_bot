@@ -50,9 +50,20 @@ graph TD
    - `OWNER_ID`: *[Owner's numeric Telegram ID]*
    - `MANAGER_IDS`: *[Initial managers comma-separated Telegram IDs to seed upon deployment]*
    - `DEFAULT_MODEL`: `deepseek/deepseek-v4-flash:free`
+   - `OPENROUTER_APP_NAME`: `Company Support Bot`
+   - `OPENROUTER_SITE_URL`: *[Optional public site URL]*
    - `AI_HISTORY_LIMIT`: `12`
+   - `AI_STREAMING_ENABLED`: `true`
+   - `AI_STREAM_UPDATE_INTERVAL_SECONDS`: `0.8`
+   - `AI_STREAM_MIN_CHARS`: `80`
+   - `AI_STREAM_USE_TELEGRAM_DRAFT`: `true`
+   - `INSTAGRAM_URL`: *[Optional absolute Instagram URL for broadcast buttons]*
+   - `OFFICIAL_SITE_URL`: *[Optional absolute official site URL for broadcast buttons]*
+   - `BROADCAST_RATE_PER_SECOND`: `20`
    - `LOG_LEVEL`: `INFO`
    - `MINIAPP_URL`: *[Will be configured after `miniapp-service` is deployed]*
+
+`bot-service` does not need `MINIAPP_SESSION_SECRET` or `MINIAPP_ORIGIN`.
 
 ---
 
@@ -72,12 +83,27 @@ graph TD
    - `APP_ENV`: `production`
    - `DATABASE_URL`: `${{PostgreSQL.DATABASE_URL}}`
    - `BOT_TOKEN`: *[Your Telegram Bot Token]*
+   - `OPENROUTER_API_KEY`: *[Your OpenRouter API Key]*
    - `OWNER_ID`: *[Owner's numeric Telegram ID]*
    - `MANAGER_IDS`: *[Initial managers comma-separated Telegram IDs to seed]*
+   - `DEFAULT_MODEL`: `deepseek/deepseek-v4-flash:free`
+   - `OPENROUTER_APP_NAME`: `Company Support Bot`
+   - `OPENROUTER_SITE_URL`: *[Optional public site URL]*
+   - `AI_HISTORY_LIMIT`: `12`
+   - `AI_STREAMING_ENABLED`: `true`
+   - `AI_STREAM_UPDATE_INTERVAL_SECONDS`: `0.8`
+   - `AI_STREAM_MIN_CHARS`: `80`
+   - `AI_STREAM_USE_TELEGRAM_DRAFT`: `true`
+   - `INSTAGRAM_URL`: *[Optional absolute Instagram URL for broadcast buttons]*
+   - `OFFICIAL_SITE_URL`: *[Optional absolute official site URL for broadcast buttons]*
+   - `BROADCAST_RATE_PER_SECOND`: `20`
    - `MINIAPP_SESSION_SECRET`: *[A secure, long, random key. The API will fail fast if this is default or missing in production]*
    - `MINIAPP_AUTH_MAX_AGE_SECONDS`: `86400`
-   - `MINIAPP_ORIGIN`: *[Will be configured to match the public URL of the `miniapp-service` once deployed]*
+   - `MINIAPP_ORIGIN`: *[Exact origin of `miniapp-service`, e.g., `https://miniapp-service-production.up.railway.app`; no path/query]*
+   - `MINIAPP_URL`: *[Exact Mini App URL used by Telegram, usually the same public `miniapp-service` URL]*
    - `LOG_LEVEL`: `INFO`
+
+In `APP_ENV=production`, the API refuses to start if `MINIAPP_SESSION_SECRET` is the development value or shorter than 32 characters, or if `MINIAPP_ORIGIN` is still the localhost default. CORS with credentials is restricted to `MINIAPP_ORIGIN` only.
 
 ---
 
@@ -98,6 +124,7 @@ graph TD
 > [!WARNING]
 > Vite embeds `VITE_` variables into the static javascript build bundle.
 > Do NOT expose backend credentials or secrets (such as `BOT_TOKEN` or `DATABASE_URL`) to the `miniapp-service`.
+> `miniapp-service` should only receive public `VITE_*` variables. Do not set `BOT_TOKEN`, `OPENROUTER_API_KEY`, `DATABASE_URL`, `OWNER_ID`, `MANAGER_IDS`, or `MINIAPP_SESSION_SECRET` on the frontend service.
 
 ---
 

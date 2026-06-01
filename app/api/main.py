@@ -25,7 +25,7 @@ allow_origins = []
 if settings.miniapp_origin:
     allow_origins.append(settings.miniapp_origin.rstrip("/"))
 
-if settings.miniapp_url:
+if settings.app_env != "production" and settings.miniapp_url:
     from urllib.parse import urlparse
     parsed = urlparse(settings.miniapp_url)
     if parsed.scheme and parsed.netloc:

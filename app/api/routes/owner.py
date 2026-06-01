@@ -17,7 +17,8 @@ from app.config import get_settings, Settings
 from app.db.models import OperatorSession, Ticket, StaffMember, User
 from app.db.session import get_session
 from app.services.statistics_service import StatisticsService
-from app.utils.enums import StaffRole, StaffStatus, TicketStatus
+from app.utils.enums import BroadcastButtonSelection, StaffRole, StaffStatus, TicketStatus
+from app.utils.exceptions import AuthorizationError, TicketStateError
 
 router = APIRouter(prefix="/owner", tags=["owner"])
 
@@ -437,7 +438,9 @@ class BroadcastResponse(BaseModel):
     id: int
     created_by_telegram_id: int
     status: str
+    content_type: str | None = None
     content_preview: str | None
+    button_selection: str
     recipient_count: int
     delivered_count: int
     failed_count: int
@@ -445,6 +448,37 @@ class BroadcastResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+
+
+class BroadcastPreviewResponse(BroadcastResponse):
+    eligible_recipient_count: int
+    available_buttons: dict[str, bool]
+
+
+class BroadcastContentRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4096)
+
+
+class BroadcastButtonsRequest(BaseModel):
+    selection: str = Field("none", description="none, instagram, site, or both")
+
+
+def _broadcast_response(b) -> BroadcastResponse:
+    return BroadcastResponse(
+        id=b.id,
+        created_by_telegram_id=b.created_by_telegram_id,
+        status=b.status,
+        content_type=b.content_type,
+        content_preview=b.content_preview,
+        button_selection=b.button_selection,
+        recipient_count=b.recipient_count,
+        delivered_count=b.delivered_count,
+        failed_count=b.failed_count,
+        blocked_count=b.blocked_count,
+        created_at=b.created_at,
+        started_at=b.started_at,
+        completed_at=b.completed_at,
+    )
 
 
 @router.get("/settings/active-model", response_model=ActiveModelResponse, dependencies=[Depends(verify_owner_role)])
@@ -499,19 +533,181 @@ async def list_recent_broadcasts(
     Returns a history of recent broadcasts with high-level statistics only.
     """
     broadcasts = await broadcast_srv.recent_broadcasts(session, limit=20)
-    return [
-        BroadcastResponse(
-            id=b.id,
-            created_by_telegram_id=b.created_by_telegram_id,
-            status=b.status,
-            content_preview=b.content_preview,
-            recipient_count=b.recipient_count,
-            delivered_count=b.delivered_count,
-            failed_count=b.failed_count,
-            blocked_count=b.blocked_count,
-            created_at=b.created_at,
-            started_at=b.started_at,
-            completed_at=b.completed_at,
+    return [_broadcast_response(b) for b in broadcasts]
+
+
+@router.get("/broadcasts/{broadcast_id}", response_model=BroadcastResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def get_broadcast_details(
+    broadcast_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> BroadcastResponse:
+    from app.db.models import Broadcast
+
+    broadcast = await session.get(Broadcast, broadcast_id)
+    if broadcast is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broadcast not found")
+    return _broadcast_response(broadcast)
+
+
+@router.post("/broadcasts/drafts", response_model=BroadcastResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def create_broadcast_draft(
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    broadcast_srv = Depends(get_broadcast_service),
+) -> BroadcastResponse:
+    try:
+        broadcast = await broadcast_srv.start_draft(
+            session, owner_telegram_id=current_user_session["telegram_user_id"]
         )
-        for b in broadcasts
-    ]
+        await session.commit()
+        await session.refresh(broadcast)
+        return _broadcast_response(broadcast)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+
+@router.put("/broadcasts/{broadcast_id}/content", response_model=BroadcastResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def set_broadcast_text_content(
+    broadcast_id: int,
+    req: BroadcastContentRequest,
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    broadcast_srv = Depends(get_broadcast_service),
+) -> BroadcastResponse:
+    try:
+        broadcast = await broadcast_srv.set_text_content(
+            session,
+            owner_telegram_id=current_user_session["telegram_user_id"],
+            broadcast_id=broadcast_id,
+            text=req.text,
+        )
+        await session.commit()
+        await session.refresh(broadcast)
+        return _broadcast_response(broadcast)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except TicketStateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.put("/broadcasts/{broadcast_id}/buttons", response_model=BroadcastResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def set_broadcast_buttons(
+    broadcast_id: int,
+    req: BroadcastButtonsRequest,
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    broadcast_srv = Depends(get_broadcast_service),
+) -> BroadcastResponse:
+    try:
+        selection = BroadcastButtonSelection(req.selection)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported broadcast button selection",
+        )
+    try:
+        broadcast = await broadcast_srv.set_buttons(
+            session,
+            owner_telegram_id=current_user_session["telegram_user_id"],
+            broadcast_id=broadcast_id,
+            selection=selection,
+        )
+        await session.commit()
+        await session.refresh(broadcast)
+        return _broadcast_response(broadcast)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except TicketStateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get("/broadcasts/{broadcast_id}/preview", response_model=BroadcastPreviewResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def preview_broadcast(
+    broadcast_id: int,
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    broadcast_srv = Depends(get_broadcast_service),
+) -> BroadcastPreviewResponse:
+    try:
+        broadcast, recipient_count = await broadcast_srv.request_final_confirmation(
+            session,
+            owner_telegram_id=current_user_session["telegram_user_id"],
+            broadcast_id=broadcast_id,
+        )
+        await session.commit()
+        response = _broadcast_response(broadcast)
+        return BroadcastPreviewResponse(
+            **response.model_dump(),
+            eligible_recipient_count=recipient_count,
+            available_buttons={
+                selection.value: broadcast_srv.is_button_selection_available(selection)
+                for selection in BroadcastButtonSelection
+            },
+        )
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except TicketStateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.post("/broadcasts/{broadcast_id}/send", response_model=BroadcastResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def send_broadcast(
+    broadcast_id: int,
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    broadcast_srv = Depends(get_broadcast_service),
+) -> BroadcastResponse:
+    try:
+        broadcast = await broadcast_srv.start_sending(
+            session,
+            owner_telegram_id=current_user_session["telegram_user_id"],
+            broadcast_id=broadcast_id,
+        )
+        await session.commit()
+        await session.refresh(broadcast)
+        from aiogram import Bot
+
+        bot = Bot(token=settings.bot_token)
+        broadcast_srv.launch_sending_job(
+            bot, broadcast_id=broadcast.id, close_bot_on_finish=True
+        )
+        return _broadcast_response(broadcast)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except TicketStateError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+
+
+@router.post("/broadcasts/{broadcast_id}/cancel", response_model=BroadcastResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def cancel_broadcast(
+    broadcast_id: int,
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    broadcast_srv = Depends(get_broadcast_service),
+) -> BroadcastResponse:
+    try:
+        broadcast = await broadcast_srv.get_report(
+            session,
+            owner_telegram_id=current_user_session["telegram_user_id"],
+            broadcast_id=broadcast_id,
+        )
+        if broadcast.status not in {"DRAFT", "READY"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only draft or ready broadcasts can be cancelled",
+            )
+        broadcast.status = "CANCELLED"
+        broadcast.completed_at = datetime.now(UTC)
+        owner_session = await session.get(
+            OperatorSession, current_user_session["telegram_user_id"]
+        )
+        if owner_session and owner_session.active_broadcast_id == broadcast.id:
+            owner_session.active_broadcast_id = None
+            owner_session.workflow_state = None
+            owner_session.updated_at = datetime.now(UTC)
+        await session.commit()
+        await session.refresh(broadcast)
+        return _broadcast_response(broadcast)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))

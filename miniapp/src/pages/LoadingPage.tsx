@@ -36,6 +36,7 @@ interface LoadingPageProps {
   isDev: boolean;
   onSelectMockRole?: (role: "customer" | "manager" | "owner" | "co_owner") => void;
   diagnostics?: DiagnosticsData | null;
+  locale?: string;
 }
 
 const getActiveLocale = (): string => {
@@ -79,8 +80,9 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
   onSelectMockRole,
   diagnostics,
   error,
+  locale: localeProp,
 }) => {
-  const locale = getActiveLocale();
+  const locale = localeProp || getActiveLocale();
   const [copied, setCopied] = useState(false);
 
   const handleCopyReport = () => {
@@ -106,7 +108,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } else {
-        alert("Failed to copy report to clipboard.");
+        alert(t("error.copy_report_failed", locale));
       }
     });
   };
@@ -375,7 +377,7 @@ export const LoadingPage: React.FC<LoadingPageProps> = ({
               marginTop: "16px",
             }}
           >
-            {copied ? "✓ Copied!" : "📋 Copy Error Report"}
+            {copied ? t("common.copied", locale) : t("common.copy_error_report", locale)}
           </button>
         </div>
       )}

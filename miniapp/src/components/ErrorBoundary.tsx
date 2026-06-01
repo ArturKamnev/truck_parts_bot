@@ -123,14 +123,14 @@ export class ErrorBoundary extends Component<Props, State> {
         this.setState({ copied: true });
         setTimeout(() => this.setState({ copied: false }), 2000);
       } else {
-        alert("Failed to copy report to clipboard.");
+        alert(t("error.copy_report_failed", locale));
       }
     });
   };
 
   public render() {
     if (this.state.hasError) {
-      const isDev = import.meta.env.DEV || new URLSearchParams(window.location.search).get("debug") === "true";
+      const isDev = import.meta.env.DEV;
       const locale = this.props.locale || getActiveLocale();
       
       let cachedRole = this.props.role;
@@ -227,7 +227,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 marginTop: "4px"
               }}
             >
-              {this.state.copied ? "✓ Copied!" : "📋 Copy Error Report"}
+              {this.state.copied ? t("common.copied", locale) : t("common.copy_error_report", locale)}
             </button>
           </div>
 

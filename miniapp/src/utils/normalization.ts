@@ -243,7 +243,9 @@ export function normalizeBroadcast(b: any): Broadcast {
       id: 0,
       created_by_telegram_id: 0,
       status: "UNKNOWN",
+      content_type: null,
       content_preview: null,
+      button_selection: "none",
       recipient_count: 0,
       delivered_count: 0,
       failed_count: 0,
@@ -258,7 +260,9 @@ export function normalizeBroadcast(b: any): Broadcast {
     id: Number(b.id) || 0,
     created_by_telegram_id: Number(b.created_by_telegram_id) || 0,
     status: typeof b.status === "string" ? b.status : "UNKNOWN",
+    content_type: typeof b.content_type === "string" ? b.content_type : null,
     content_preview: typeof b.content_preview === "string" ? b.content_preview : null,
+    button_selection: typeof b.button_selection === "string" ? b.button_selection : "none",
     recipient_count: Number(b.recipient_count) || 0,
     delivered_count: Number(b.delivered_count) || 0,
     failed_count: Number(b.failed_count) || 0,
@@ -338,4 +342,3 @@ export function copyToClipboard(text: string): Promise<boolean> {
     }
   }
 }
-

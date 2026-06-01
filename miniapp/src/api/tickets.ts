@@ -268,7 +268,9 @@ export interface Broadcast {
   id: number;
   created_by_telegram_id: number;
   status: string;
+  content_type?: string | null;
   content_preview: string | null;
+  button_selection?: string;
   recipient_count: number;
   delivered_count: number;
   failed_count: number;
@@ -276,6 +278,11 @@ export interface Broadcast {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+}
+
+export interface BroadcastPreview extends Broadcast {
+  eligible_recipient_count: number;
+  available_buttons: Record<string, boolean>;
 }
 
 export interface ActiveModelInfo {
@@ -314,6 +321,53 @@ export const getOwnerBroadcasts = async (): Promise<Broadcast[]> => {
   return (broadcasts || []).map(normalizeBroadcast);
 };
 
+export const createBroadcastDraft = async (): Promise<Broadcast> => {
+  const broadcast = await apiRequest<Broadcast>("/api/owner/broadcasts/drafts", {
+    method: "POST",
+  });
+  return normalizeBroadcast(broadcast);
+};
+
+export const setBroadcastContent = async (broadcastId: number, text: string): Promise<Broadcast> => {
+  const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/content`, {
+    method: "PUT",
+    body: JSON.stringify({ text }),
+  });
+  return normalizeBroadcast(broadcast);
+};
+
+export const setBroadcastButtons = async (broadcastId: number, selection: string): Promise<Broadcast> => {
+  const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/buttons`, {
+    method: "PUT",
+    body: JSON.stringify({ selection }),
+  });
+  return normalizeBroadcast(broadcast);
+};
+
+export const previewBroadcast = async (broadcastId: number): Promise<BroadcastPreview> => {
+  const preview = await apiRequest<BroadcastPreview>(`/api/owner/broadcasts/${broadcastId}/preview`);
+  return {
+    ...normalizeBroadcast(preview),
+    eligible_recipient_count: Number(preview?.eligible_recipient_count) || 0,
+    available_buttons: preview?.available_buttons && typeof preview.available_buttons === "object"
+      ? preview.available_buttons
+      : {},
+  };
+};
+
+export const sendBroadcast = async (broadcastId: number): Promise<Broadcast> => {
+  const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/send`, {
+    method: "POST",
+  });
+  return normalizeBroadcast(broadcast);
+};
+
+export const cancelBroadcast = async (broadcastId: number): Promise<Broadcast> => {
+  const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/cancel`, {
+    method: "POST",
+  });
+  return normalizeBroadcast(broadcast);
+};
 
 
 

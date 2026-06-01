@@ -8,12 +8,12 @@ from typing import Any
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import Settings
-from app.db.models import Broadcast, BroadcastDelivery, OperatorSession, User
+from app.db.models import Broadcast, BroadcastDelivery, OperatorSession, StaffMember, User
 from app.db.session import SessionLocal
 from app.services.authorization_service import AuthorizationService
 from app.services.relay_service import MessageRelayService
@@ -124,6 +124,35 @@ class BroadcastService:
         await session.flush()
         return broadcast
 
+    async def set_text_content(
+        self,
+        session: AsyncSession,
+        *,
+        owner_telegram_id: int,
+        broadcast_id: int,
+        text: str,
+    ) -> Broadcast:
+        await self._ensure_broadcaster(session, owner_telegram_id)
+        broadcast = await self._owned_broadcast(session, owner_telegram_id, broadcast_id)
+        if broadcast.status not in {BroadcastStatus.DRAFT.value, BroadcastStatus.READY.value}:
+            raise TicketStateError("Черновик уже нельзя изменить.")
+        clean_text = text.strip()
+        if not clean_text:
+            raise TicketStateError("Текст рассылки не должен быть пустым.")
+        broadcast.source_chat_id = None
+        broadcast.source_message_id = None
+        broadcast.media_group_id = None
+        broadcast.media_group_message_ids = None
+        broadcast.content_type = TicketMessageContentType.TEXT.value
+        broadcast.content_preview = clean_text
+        broadcast.status = BroadcastStatus.DRAFT.value
+        owner_session = await self._operator_session(session, owner_telegram_id)
+        owner_session.active_broadcast_id = broadcast.id
+        owner_session.workflow_state = OwnerWorkflowState.CHOOSING_BROADCAST_BUTTONS.value
+        owner_session.updated_at = datetime.now(UTC)
+        await session.flush()
+        return broadcast
+
     async def append_album_message(
         self, session: AsyncSession, *, owner_telegram_id: int, message: Any
     ) -> bool:
@@ -208,8 +237,12 @@ class BroadcastService:
         await session.flush()
         return broadcast
 
-    def launch_sending_job(self, bot: Bot, *, broadcast_id: int) -> None:
-        self._send_task = asyncio.create_task(self._send_job(bot, broadcast_id))
+    def launch_sending_job(
+        self, bot: Bot, *, broadcast_id: int, close_bot_on_finish: bool = False
+    ) -> None:
+        self._send_task = asyncio.create_task(
+            self._send_job(bot, broadcast_id, close_bot_on_finish=close_bot_on_finish)
+        )
 
     async def send_test(self, bot: Bot, session: AsyncSession, *, broadcast: Broadcast) -> None:
         await self.copy_broadcast_to_chat(
@@ -220,6 +253,17 @@ class BroadcastService:
         self, bot: Bot, *, broadcast: Broadcast, destination_chat_id: int
     ) -> None:
         reply_markup = self.buttons_markup(broadcast.button_selection)
+        if (
+            broadcast.content_type == TicketMessageContentType.TEXT.value
+            and broadcast.source_chat_id is None
+            and broadcast.content_preview
+        ):
+            await bot.send_message(
+                chat_id=destination_chat_id,
+                text=broadcast.content_preview,
+                reply_markup=reply_markup,
+            )
+            return
         if broadcast.source_chat_id is None:
             raise TicketStateError("В черновике нет сообщения.")
         if broadcast.media_group_message_ids:
@@ -309,34 +353,40 @@ class BroadcastService:
         )
         return bool(count)
 
-    async def _send_job(self, bot: Bot, broadcast_id: int) -> None:
-        delay = 1 / max(self._settings.broadcast_rate_per_second, 1)
-        async with SessionLocal() as session:
-            broadcast = await session.get(Broadcast, broadcast_id)
-            if broadcast is None:
-                return
-            deliveries = await self._pending_deliveries(session, broadcast_id=broadcast_id)
-            await session.commit()
-
-        for delivery in deliveries:
-            async with SessionLocal() as session, session.begin():
-                delivery = await session.get(
-                    BroadcastDelivery,
-                    delivery.id,
-                    options=[selectinload(BroadcastDelivery.user)],
-                )
+    async def _send_job(
+        self, bot: Bot, broadcast_id: int, *, close_bot_on_finish: bool = False
+    ) -> None:
+        try:
+            delay = 1 / max(self._settings.broadcast_rate_per_second, 1)
+            async with SessionLocal() as session:
                 broadcast = await session.get(Broadcast, broadcast_id)
-                if delivery is None or broadcast is None:
-                    continue
-                await self._attempt_delivery(bot, session, broadcast, delivery)
-            await asyncio.sleep(delay)
+                if broadcast is None:
+                    return
+                deliveries = await self._pending_deliveries(session, broadcast_id=broadcast_id)
+                await session.commit()
 
-        async with SessionLocal() as session, session.begin():
-            await self._refresh_counts(session, broadcast_id=broadcast_id)
-            broadcast = await session.get(Broadcast, broadcast_id)
-            if broadcast is not None and broadcast.status == BroadcastStatus.SENDING.value:
-                broadcast.status = BroadcastStatus.COMPLETED.value
-                broadcast.completed_at = datetime.now(UTC)
+            for delivery in deliveries:
+                async with SessionLocal() as session, session.begin():
+                    delivery = await session.get(
+                        BroadcastDelivery,
+                        delivery.id,
+                        options=[selectinload(BroadcastDelivery.user)],
+                    )
+                    broadcast = await session.get(Broadcast, broadcast_id)
+                    if delivery is None or broadcast is None:
+                        continue
+                    await self._attempt_delivery(bot, session, broadcast, delivery)
+                await asyncio.sleep(delay)
+
+            async with SessionLocal() as session, session.begin():
+                await self._refresh_counts(session, broadcast_id=broadcast_id)
+                broadcast = await session.get(Broadcast, broadcast_id)
+                if broadcast is not None and broadcast.status == BroadcastStatus.SENDING.value:
+                    broadcast.status = BroadcastStatus.COMPLETED.value
+                    broadcast.completed_at = datetime.now(UTC)
+        finally:
+            if close_bot_on_finish:
+                await bot.session.close()
 
     async def _attempt_delivery(
         self,
@@ -415,10 +465,15 @@ class BroadcastService:
     def _recipient_filters(self):
         blocked_ids = set(self._settings.manager_ids)
         blocked_ids.add(self._settings.owner_id)
+        active_staff_exists = exists().where(
+            StaffMember.telegram_user_id == User.telegram_user_id,
+            StaffMember.status == "active",
+        )
         return (
             User.broadcasts_enabled.is_(True),
             User.is_unavailable.is_(False),
             User.telegram_user_id.not_in(blocked_ids),
+            ~active_staff_exists,
         )
 
     async def _operator_session(

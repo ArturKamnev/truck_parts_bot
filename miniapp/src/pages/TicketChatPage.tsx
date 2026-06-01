@@ -165,7 +165,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
       setTicket(updated);
       await loadTicketAndMessages(false);
     } catch (err) {
-      alert((err as ApiError).message || "Failed to claim ticket.");
+      alert((err as ApiError).message || t("manager.claim_failed", locale));
     } finally {
       setLoading(false);
     }
@@ -180,7 +180,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
       setTicket(updated);
       await loadTicketAndMessages(false);
     } catch (err) {
-      alert((err as ApiError).message || "Failed to close ticket.");
+      alert((err as ApiError).message || t("common.error", locale));
     } finally {
       setLoading(false);
     }
@@ -247,7 +247,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
   };
 
   const customerName = ticket 
-    ? [ticket.customer_first_name, ticket.customer_last_name].filter(Boolean).join(" ") || ticket.customer_username || `User ${ticket.customer_id}`
+    ? [ticket.customer_first_name, ticket.customer_last_name].filter(Boolean).join(" ") || ticket.customer_username || `${t("chat.client", locale)} ${ticket.customer_id}`
     : "";
 
   return (
@@ -293,7 +293,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
         </button>
 
         <span style={{ fontSize: "14px", fontWeight: 700 }}>
-          {loading ? (t("chat.loading", locale) || "Loading chat...") : `Ticket #${ticketId}`}
+          {loading ? t("chat.loading", locale) : t("ticket.title", locale).replace("{id}", String(ticketId))}
         </span>
 
         {viewerRole !== "customer" && ticket && (ticket.status === "OPEN" || ticket.status === "CLAIMED") && (
@@ -451,6 +451,7 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 message={msg} 
                 viewerRole={viewerRole} 
                 onRetry={handleRetrySend}
+                locale={locale}
               />
             ))}
             <div ref={chatEndRef} />

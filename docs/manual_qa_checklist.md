@@ -67,11 +67,13 @@ Follow this checklist to verify application flows and security boundaries before
   - Clicking another model starts a switch request and shows a loading state.
   - Switching to an allowed model succeeds and updates settings immediately.
   - Swapping to a disallowed model (by manual request manipulation) fails with 400 Bad Request.
-- [ ] **Broadcast History Logs:** Go to the "More" tab. Locate the "История рассылок" section. Verify:
+- [ ] **Broadcast Creation:** Go to the "Рассылки" / "Broadcasts" tab. Create a text broadcast, select each available button mode (none, Instagram, site, both), preview it, and confirm send. Verify it moves to `SENDING` and then completes in delivery stats.
+- [ ] **Broadcast Permissions:** Repeat as a co-owner and verify creation/sending works. Repeat as a manager and customer and verify broadcast endpoints return `403 Forbidden` and the Mini App does not show the broadcast tab.
+- [ ] **Broadcast History Logs:** Go to the "Рассылки" tab and verify:
   - It lists recent broadcasts with IDs and statuses.
   - It shows correct delivery statistics (recipients, delivered, failed, blocked counts).
   - No private user messages or error stack traces are exposed.
-  - There is a clear instruction card with a shortcut pointing to the bot for creating new broadcasts.
+- [ ] **Broadcast Media Regression:** Create a photo/video/document broadcast from the Telegram bot using the existing bot flow. Verify it still previews and sends correctly.
 - [ ] **Dashboard Shortcuts:** Test the "Менеджеры" and "Статистика" shortcuts in the Profile tab. Confirm they instantly switch the bottom navigation view to the correct tabs.
 
 ---
@@ -82,4 +84,3 @@ Follow this checklist to verify application flows and security boundaries before
 - [ ] **Click Spam Throttling:** Enter a message and spam the send button (or double-click/hit Enter multiple times). Verify that the message is sent exactly once (no duplicate messages in DB or UI).
 - [ ] **Network Interruptions:** Simulate a network drop during a message send. Verify that the message is marked as "FAILED" with a retry action, and no duplicate message is created on retry.
 - [ ] **Dynamic Role Sync:** Promoted a customer to a manager using the owner dashboard. Switch to the customer's Mini App page and change tab. Confirm that their layout immediately refreshes to the manager navigation menu without cache clears.
-

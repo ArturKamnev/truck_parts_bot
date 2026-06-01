@@ -38,7 +38,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
 
   const customerName = [ticket.customer_first_name, ticket.customer_last_name]
     .filter(Boolean)
-    .join(" ") || ticket.customer_username || `User ${ticket.customer_id}`;
+    .join(" ") || ticket.customer_username || `${t("chat.client", locale)} ${ticket.customer_id}`;
 
   return (
     <div
@@ -67,7 +67,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span style={{ fontSize: "14px", fontWeight: 700, color: "hsl(var(--accent-hsl))" }}>
-              Ticket #{ticket.id}
+              {t("ticket.title", locale).replace("{id}", String(ticket.id))}
             </span>
             <span
               style={{
@@ -101,7 +101,7 @@ export const TicketCard: React.FC<TicketCardProps> = ({
               <span>{formattedDate}</span>
             </div>
             {ticket.assigned_manager_telegram_id && (
-              <span>Mgr ID: {ticket.assigned_manager_telegram_id}</span>
+              <span>{t("ticket.manager_id", locale)}: {ticket.assigned_manager_telegram_id}</span>
             )}
           </div>
         </div>

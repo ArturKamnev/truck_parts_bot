@@ -87,6 +87,7 @@ def test_production_allows_flexible_manager_count() -> None:
         MANAGER_IDS="101",
         DEFAULT_MODEL=DEFAULT_MODEL,
         MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
+        MINIAPP_ORIGIN="https://miniapp.example.com",
     )
     assert settings_one.manager_ids == [101]
 
@@ -100,6 +101,6 @@ def test_production_allows_flexible_manager_count() -> None:
         MANAGER_IDS="",
         DEFAULT_MODEL=DEFAULT_MODEL,
         MINIAPP_SESSION_SECRET="production_safe_session_secret_value_12345",
+        MINIAPP_ORIGIN="https://miniapp.example.com",
     )
     assert settings_empty.manager_ids == []
-

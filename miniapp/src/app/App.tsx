@@ -19,6 +19,7 @@ import { OwnerDashboardPage } from "../pages/OwnerDashboardPage";
 import { TicketChatPage } from "../pages/TicketChatPage";
 import { AIChatPage } from "../pages/AIChatPage";
 import { SelfTestPage } from "../pages/SelfTestPage";
+import { BroadcastsPage } from "../pages/BroadcastsPage";
 
 
 // --- Inline Subcomponents for Navigation ---
@@ -42,7 +43,7 @@ const NewChatView: React.FC<{
       setActiveTab("chats");
     } catch (err) {
       const apiErr = err as ApiError;
-      setError(apiErr.message || (locale === "ru" ? "Не удалось создать обращение." : "Failed to create request."));
+      setError(apiErr.message || t("error.create_ticket_failed", locale));
     } finally {
       setSending(false);
     }
@@ -121,12 +122,14 @@ const ProfileView: React.FC<{
   profile: UserProfile; 
   onLogout: () => void; 
   isMockActive: boolean;
+  locale: string;
+  setLocale: (locale: string) => void;
   setCurrentTab?: (tab: string) => void;
   setProfile?: React.Dispatch<React.SetStateAction<UserProfile | null>>;
-}> = ({ profile, onLogout, isMockActive, setCurrentTab, setProfile }) => {
+}> = ({ profile, onLogout, isMockActive, locale, setLocale, setCurrentTab, setProfile }) => {
   const displayName = profile.display_name;
   const initial = getInitials(displayName);
-  const lang = profile.preferred_language || "ru";
+  const lang = locale || profile.preferred_language || "ru";
 
   // States for manager
   const [mgrStats, setMgrStats] = useState<{ tickets_claimed: number; tickets_closed: number } | null>(null);
@@ -186,7 +189,7 @@ const ProfileView: React.FC<{
       }
     } catch (e) {
       console.error(e);
-      alert(t("profile.broadcast_toggle_error", lang) || "Не удалось изменить настройки рассылок");
+      alert(t("profile.broadcast_toggle_error", lang));
     } finally {
       setTogglingBroadcasts(false);
     }
@@ -198,6 +201,8 @@ const ProfileView: React.FC<{
     setSavingLanguage(true);
     try {
       const savedLanguage = await updateLanguage(language);
+      setLocale(savedLanguage);
+      localStorage.setItem("tma_preferred_language", savedLanguage);
       
       if (setProfile) {
         setProfile(prev => {
@@ -212,6 +217,7 @@ const ProfileView: React.FC<{
         setProfile(freshProfile);
       }
       localStorage.setItem("tma_user_profile", JSON.stringify(freshProfile));
+      setLocale(freshProfile.preferred_language || savedLanguage);
       const finalLanguage = freshProfile.preferred_language || "ru";
 
       if (import.meta.env.DEV) {
@@ -235,6 +241,7 @@ const ProfileView: React.FC<{
         });
       }
       
+      setLocale(previousLanguage);
       alert(t("error.language_update_failed", previousLanguage));
     } finally {
       setSavingLanguage(false);
@@ -249,7 +256,7 @@ const ProfileView: React.FC<{
       setModelInfo(prev => prev ? { ...prev, active_model: active } : null);
     } catch (e) {
       console.error(e);
-      alert("Не удалось изменить активную модель: " + ((e as ApiError).message || "Ошибка"));
+      alert(`${t("profile.model_switch_failed", lang)}: ${(e as ApiError).message || t("common.error", lang)}`);
     } finally {
       setSwitchingModel(null);
     }
@@ -289,7 +296,7 @@ const ProfileView: React.FC<{
           {initial}
         </div>
         <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#fff", margin: "0 0 2px 0" }}>{displayName}</h3>
-        <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>@{profile.username || "no_username"}</span>
+        <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>@{profile.username || t("common.no_username", lang)}</span>
       </div>
 
       {/* Role and System Info */}
@@ -305,7 +312,7 @@ const ProfileView: React.FC<{
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
-          <span style={{ color: "hsl(var(--text-hint-hsl))" }}>Telegram ID:</span>
+          <span style={{ color: "hsl(var(--text-hint-hsl))" }}>{t("profile.telegram_id", lang)}:</span>
           <span style={{ fontWeight: 600, color: "#fff" }}>{profile.telegram_user_id}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
@@ -314,7 +321,7 @@ const ProfileView: React.FC<{
         </div>
         {isMockActive && (
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
-            <span style={{ color: "hsl(var(--warning-hsl))" }}>Режим:</span>
+            <span style={{ color: "hsl(var(--warning-hsl))" }}>{t("profile.mode", lang)}:</span>
             <span style={{ fontWeight: 700, color: "hsl(var(--warning-hsl))" }}>Mock Demo</span>
           </div>
         )}
@@ -340,7 +347,7 @@ const ProfileView: React.FC<{
             ["en", "EN"],
             ["ky", "KY"],
           ] as const).map(([code, label]) => {
-            const active = (profile.preferred_language || "ru") === code;
+            const active = lang === code;
             return (
               <button
                 key={code}
@@ -588,7 +595,7 @@ const ProfileView: React.FC<{
                 })}
               </div>
             ) : (
-              <span style={{ fontSize: "12px", color: "hsl(var(--error-hsl))" }}>Не удалось загрузить настройки AI</span>
+              <span style={{ fontSize: "12px", color: "hsl(var(--error-hsl))" }}>{t("profile.model_load_failed", lang)}</span>
             )}
           </div>}
 
@@ -644,7 +651,7 @@ const ProfileView: React.FC<{
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600 }}>
-                      <span style={{ color: "hsl(var(--accent-hsl))" }}>Рассылка #{b.id}</span>
+                      <span style={{ color: "hsl(var(--accent-hsl))" }}>{t("broadcast.item_title", lang).replace("{id}", String(b.id))}</span>
                       <span
                         style={{
                           fontSize: "10px",
@@ -670,17 +677,17 @@ const ProfileView: React.FC<{
                       </span>
                     )}
                     <div style={{ display: "flex", gap: "10px", fontSize: "10px", color: "hsl(var(--text-hint-hsl))", marginTop: "2px" }}>
-                      <span>Получатели: <b>{b.recipient_count}</b></span>
-                      <span>Доставлено: <b style={{ color: "hsl(var(--success-hsl))" }}>{b.delivered_count}</b></span>
-                      {b.failed_count > 0 && <span>Ошибка: <b style={{ color: "hsl(var(--error-hsl))" }}>{b.failed_count}</b></span>}
-                      {b.blocked_count > 0 && <span>Блок: <b style={{ color: "hsl(var(--warning-hsl))" }}>{b.blocked_count}</b></span>}
+                      <span>{t("broadcast.recipients", lang)}: <b>{b.recipient_count}</b></span>
+                      <span>{t("broadcast.delivered", lang)}: <b style={{ color: "hsl(var(--success-hsl))" }}>{b.delivered_count}</b></span>
+                      {b.failed_count > 0 && <span>{t("broadcast.failed", lang)}: <b style={{ color: "hsl(var(--error-hsl))" }}>{b.failed_count}</b></span>}
+                      {b.blocked_count > 0 && <span>{t("broadcast.blocked", lang)}: <b style={{ color: "hsl(var(--warning-hsl))" }}>{b.blocked_count}</b></span>}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
               <span style={{ fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>
-                {lang === "ru" ? "История рассылок пуста" : lang === "ky" ? "Жөнөтүүлөрдүн тарыхы бош" : "Broadcast history is empty"}
+                {t("broadcast.empty", lang)}
               </span>
             )}
           </div>
@@ -742,6 +749,22 @@ export const App: React.FC = () => {
   const [isMockActive, setIsMockActive] = useState(false);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsData | null>(null);
   const [currentTab, setCurrentTab] = useState<string>("");
+  const [locale, setLocale] = useState<string>(() => {
+    const cachedLocale = localStorage.getItem("tma_preferred_language");
+    if (cachedLocale && ["ru", "en", "ky"].includes(cachedLocale)) return cachedLocale;
+    const cached = localStorage.getItem("tma_user_profile");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (["ru", "en", "ky"].includes(parsed?.preferred_language)) {
+          return parsed.preferred_language;
+        }
+      } catch (e) {
+        localStorage.removeItem("tma_user_profile");
+      }
+    }
+    return "ru";
+  });
 
   useEffect(() => {
     if (profile) {
@@ -755,7 +778,7 @@ export const App: React.FC = () => {
     }
   }, [profile?.role]);
 
-  const isDev = import.meta.env.DEV || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") === "true");
+  const isDev = import.meta.env.DEV;
   const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
   const handleAuthentication = async (initData: string, fromMock = false, currentDiagnostics: DiagnosticsData) => {
@@ -766,7 +789,9 @@ export const App: React.FC = () => {
       const authData = await authenticateTelegram(initData);
       setStoredToken(authData.token);
       setProfile(authData.profile);
+      setLocale(authData.profile.preferred_language || "ru");
       localStorage.setItem("tma_user_profile", JSON.stringify(authData.profile));
+      localStorage.setItem("tma_preferred_language", authData.profile.preferred_language || "ru");
       setIsMockActive(fromMock);
       
       currentDiagnostics.currentRole = authData.profile.role;
@@ -786,9 +811,9 @@ export const App: React.FC = () => {
       currentDiagnostics.errorType = apiErr.message || "Authentication Failed";
       setDiagnostics({ ...currentDiagnostics });
 
-      let errMsg = "Не удалось подключиться к серверу Mini App.";
+      let errMsg = t("error.connection_failure", locale);
       if (apiErr.status === 401 || apiErr.status === 403) {
-        errMsg = "Telegram-сессия недействительна. Откройте приложение заново из бота.";
+        errMsg = t("error.stale_session", locale);
         setAuthState("invalidSession");
       } else {
         setAuthState("apiUnavailable");
@@ -816,7 +841,9 @@ export const App: React.FC = () => {
       }
 
       setProfile(freshProfile);
+      setLocale(freshProfile.preferred_language || locale);
       localStorage.setItem("tma_user_profile", JSON.stringify(freshProfile));
+      localStorage.setItem("tma_preferred_language", freshProfile.preferred_language || locale);
       setIsMockActive(activeToken.includes(".mock_") || !window.Telegram?.WebApp?.initData);
       setError(null);
 
@@ -839,7 +866,7 @@ export const App: React.FC = () => {
         setProfile(null);
         setError({
           status: apiErr.status,
-          message: "Telegram-сессия недействительна. Откройте приложение заново из бота.",
+          message: t("error.stale_session", locale),
         });
         setAuthState("invalidSession");
       } else {
@@ -903,9 +930,10 @@ export const App: React.FC = () => {
     if (initData) {
       setAuthState("authenticating");
       await handleAuthentication(initData, false, currentDiagnostics);
-    } else if (storedToken) {
+    } else if (storedToken && isDev) {
       if (cachedProfile) {
         setProfile(cachedProfile);
+        setLocale(cachedProfile.preferred_language || locale);
         setAuthState("ready");
         refreshProfile(storedToken, cachedProfile, currentDiagnostics);
       } else {
@@ -920,7 +948,7 @@ export const App: React.FC = () => {
       } else {
         setError({
           status: 403,
-          message: "Откройте приложение через кнопку Mini App в Telegram-боте.",
+          message: t("error.restricted_access_desc", locale),
         });
         setAuthState("missingInitData");
       }
@@ -937,7 +965,7 @@ export const App: React.FC = () => {
       localStorage.removeItem("tma_user_profile");
       setError({
         status: 401,
-        message: "Telegram-сессия недействительна. Откройте приложение заново из бота.",
+        message: t("error.stale_session", locale),
       });
       setAuthState("invalidSession");
     });
@@ -1007,8 +1035,6 @@ export const App: React.FC = () => {
     initializeApp(true);
   };
 
-  const locale = profile?.preferred_language || "ru";
-
   const isTestMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test") === "true";
   if (isTestMode) {
     return <SelfTestPage />;
@@ -1030,6 +1056,7 @@ export const App: React.FC = () => {
           isDev={isDev}
           onSelectMockRole={handleSelectMockRole}
           diagnostics={diagnostics}
+          locale={locale}
         />
       </ErrorBoundary>
     );
@@ -1063,7 +1090,7 @@ export const App: React.FC = () => {
       apiBaseUrl={apiBaseUrl}
     >
       <div style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%" }}>
-        <TopBar profile={profile} isMockActive={isMockActive} onLogout={handleLogout} />
+        <TopBar profile={profile} isMockActive={isMockActive} onLogout={handleLogout} locale={locale} />
         
         <main style={{ flex: 1, overflow: "hidden" }}>
           {profile.role === "customer" && (
@@ -1082,6 +1109,8 @@ export const App: React.FC = () => {
                   profile={profile} 
                   onLogout={handleLogout} 
                   isMockActive={isMockActive} 
+                  locale={locale}
+                  setLocale={setLocale}
                   setCurrentTab={setCurrentTab}
                   setProfile={setProfile}
                 />
@@ -1104,6 +1133,8 @@ export const App: React.FC = () => {
                   profile={profile} 
                   onLogout={handleLogout} 
                   isMockActive={isMockActive} 
+                  locale={locale}
+                  setLocale={setLocale}
                   setCurrentTab={setCurrentTab}
                   setProfile={setProfile}
                 />
@@ -1120,12 +1151,15 @@ export const App: React.FC = () => {
                   locale={locale}
                 />
               )}
+              {currentTab === "broadcasts" && <BroadcastsPage locale={locale} />}
               {currentTab === "ai_helper" && <AIChatPage locale={locale} />}
               {currentTab === "more" && (
                 <ProfileView 
                   profile={profile} 
                   onLogout={handleLogout} 
                   isMockActive={isMockActive} 
+                  locale={locale}
+                  setLocale={setLocale}
                   setCurrentTab={setCurrentTab}
                   setProfile={setProfile}
                 />
@@ -1134,7 +1168,7 @@ export const App: React.FC = () => {
           )}
           {!["customer", "manager", "owner", "co_owner"].includes(profile.role) && (
             <div style={{ padding: "20px", color: "red", textAlign: "center" }}>
-              Unsupported role fallback. Please contact administrator.
+              {t("error.unsupported_role_fallback", locale)}
             </div>
           )}
         </main>
@@ -1294,6 +1328,17 @@ export const App: React.FC = () => {
               >
                 <BarChart3 size={20} />
                 {t("nav.stats", locale)}
+              </button>
+              <button
+                onClick={() => setCurrentTab("broadcasts")}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
+                  background: "none", border: "none", color: currentTab === "broadcasts" ? "hsl(var(--accent-hsl))" : "hsl(var(--text-hint-hsl))",
+                  fontSize: "10px", fontWeight: 600, cursor: "pointer"
+                }}
+              >
+                <Radio size={20} />
+                {t("nav.broadcasts", locale)}
               </button>
               <button
                 onClick={() => setCurrentTab("ai_helper")}

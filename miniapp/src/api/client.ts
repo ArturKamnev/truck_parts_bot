@@ -1,5 +1,6 @@
 // Fetch-based API client for communicating with FastAPI backend
 import { waitForTelegramLaunchContext } from "../telegram/webapp";
+import { t } from "../i18n";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000").replace(/\/$/, "");
 
@@ -10,6 +11,23 @@ export interface ApiError {
 
 // Token Storage Key
 const TOKEN_KEY = "tma_session_token";
+
+const getCachedLocale = (): string => {
+  const direct = localStorage.getItem("tma_preferred_language");
+  if (direct && ["ru", "en", "ky"].includes(direct)) return direct;
+  try {
+    const cached = localStorage.getItem("tma_user_profile");
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (["ru", "en", "ky"].includes(parsed?.preferred_language)) {
+        return parsed.preferred_language;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+  return "ru";
+};
 
 export const getStoredToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
@@ -98,7 +116,7 @@ export const apiRequest = async <T>(
 
       triggerAuthError();
       localStorage.removeItem("tma_user_profile");
-      const errMsg = "Telegram-сессия недействительна. Откройте приложение заново из бота.";
+      const errMsg = t("error.stale_session", getCachedLocale());
       throw { status: response.status, message: errMsg } as ApiError;
     }
 
@@ -120,6 +138,6 @@ export const apiRequest = async <T>(
       throw error;
     }
     // Network errors
-    throw { status: 0, message: "API unreachable or CORS/config error. Check API base URL and server CORS settings." } as ApiError;
+    throw { status: 0, message: t("error.api_unreachable", getCachedLocale()) } as ApiError;
   }
 };
