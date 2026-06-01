@@ -96,7 +96,15 @@ async def test_owner_and_co_owner_can_create_preview_and_send_broadcast(
                 headers={"Authorization": f"Bearer {token}"},
             )
             assert res.status_code == 200
-            assert res.json()["eligible_recipient_count"] == 2
+            preview = res.json()
+            assert preview["draft_id"] == draft_id
+            assert preview["status"] == "READY"
+            assert preview["text"] == "Mini App broadcast"
+            assert preview["buttons"] == []
+            assert preview["attachment"] is None
+            assert preview["eligible_recipient_count"] == 2
+            assert preview["estimated_recipients"] == 2
+            assert preview["validation_warnings"] == []
 
             res = await ac.post(
                 f"/api/owner/broadcasts/{draft_id}/send",
@@ -104,6 +112,32 @@ async def test_owner_and_co_owner_can_create_preview_and_send_broadcast(
             )
             assert res.status_code == 200
             assert res.json()["status"] == "SENDING"
+
+
+@pytest.mark.anyio
+async def test_miniapp_draft_creation_reuses_active_draft(
+    app_override_session,
+    settings: Settings,
+    session,
+) -> None:
+    await _seed_user(session, settings.owner_id)
+    token = create_signed_session_token(
+        settings.owner_id, "owner", settings.miniapp_session_secret, 3600
+    )
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app_override_session), base_url="http://test"
+    ) as ac:
+        first = await ac.post(
+            "/api/owner/broadcasts/drafts", headers={"Authorization": f"Bearer {token}"}
+        )
+        second = await ac.post(
+            "/api/owner/broadcasts/drafts", headers={"Authorization": f"Bearer {token}"}
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
 
 
 @pytest.mark.anyio

@@ -7,6 +7,27 @@ import {
   normalizeAIMessage,
 } from "../utils/normalization";
 
+const BROADCAST_REQUEST_TIMEOUT_MS = 20000;
+
+const broadcastTimeoutError = () => ({ status: 0, message: "Broadcast request timed out" });
+
+const withBroadcastTimeout = async <T>(
+  run: (signal: AbortSignal) => Promise<T>
+): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), BROADCAST_REQUEST_TIMEOUT_MS);
+  try {
+    return await run(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw broadcastTimeoutError();
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+};
+
 export interface Ticket {
   id: number;
   customer_id: number;
@@ -514,8 +535,14 @@ export interface Broadcast {
 }
 
 export interface BroadcastPreview extends Broadcast {
+  draft_id?: number;
+  text?: string | null;
+  buttons?: string[];
+  attachment?: Record<string, string | number | null> | null;
+  estimated_recipients?: number;
   eligible_recipient_count: number;
   available_buttons: Record<string, boolean>;
+  validation_warnings?: string[];
 }
 
 export interface ActiveModelInfo {
@@ -555,17 +582,23 @@ export const getOwnerBroadcasts = async (): Promise<Broadcast[]> => {
 };
 
 export const createBroadcastDraft = async (): Promise<Broadcast> => {
-  const broadcast = await apiRequest<Broadcast>("/api/owner/broadcasts/drafts", {
-    method: "POST",
-  });
+  const broadcast = await withBroadcastTimeout((signal) =>
+    apiRequest<Broadcast>("/api/owner/broadcasts/drafts", {
+      method: "POST",
+      signal,
+    })
+  );
   return normalizeBroadcast(broadcast);
 };
 
 export const setBroadcastContent = async (broadcastId: number, text: string): Promise<Broadcast> => {
-  const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/content`, {
-    method: "PUT",
-    body: JSON.stringify({ text }),
-  });
+  const broadcast = await withBroadcastTimeout((signal) =>
+    apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/content`, {
+      method: "PUT",
+      signal,
+      body: JSON.stringify({ text }),
+    })
+  );
   return normalizeBroadcast(broadcast);
 };
 
@@ -578,11 +611,14 @@ export const setBroadcastAttachment = async (
   formData.append("file", file);
   if (caption?.trim()) formData.append("caption", caption.trim());
   const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}/api/owner/broadcasts/${broadcastId}/attachment`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    body: formData,
-  });
+  const response = await withBroadcastTimeout((signal) =>
+    fetch(`${API_BASE_URL}/api/owner/broadcasts/${broadcastId}/attachment`, {
+      method: "POST",
+      signal,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: formData,
+    })
+  );
   if (!response.ok) {
     let message = response.statusText || "Upload failed";
     try {
@@ -597,28 +633,46 @@ export const setBroadcastAttachment = async (
 };
 
 export const setBroadcastButtons = async (broadcastId: number, selection: string): Promise<Broadcast> => {
-  const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/buttons`, {
-    method: "PUT",
-    body: JSON.stringify({ selection }),
-  });
+  const broadcast = await withBroadcastTimeout((signal) =>
+    apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/buttons`, {
+      method: "PUT",
+      signal,
+      body: JSON.stringify({ selection }),
+    })
+  );
   return normalizeBroadcast(broadcast);
 };
 
 export const previewBroadcast = async (broadcastId: number): Promise<BroadcastPreview> => {
-  const preview = await apiRequest<BroadcastPreview>(`/api/owner/broadcasts/${broadcastId}/preview`);
+  const preview = await withBroadcastTimeout((signal) =>
+    apiRequest<BroadcastPreview>(`/api/owner/broadcasts/${broadcastId}/preview`, { signal })
+  );
   return {
     ...normalizeBroadcast(preview),
+    draft_id: Number(preview?.draft_id) || Number(preview?.id) || 0,
+    text: typeof preview?.text === "string" ? preview.text : preview?.content_preview ?? null,
+    buttons: Array.isArray(preview?.buttons) ? preview.buttons : [],
+    attachment: preview?.attachment && typeof preview.attachment === "object"
+      ? preview.attachment
+      : null,
+    estimated_recipients: Number(preview?.estimated_recipients) || 0,
     eligible_recipient_count: Number(preview?.eligible_recipient_count) || 0,
     available_buttons: preview?.available_buttons && typeof preview.available_buttons === "object"
       ? preview.available_buttons
       : {},
+    validation_warnings: Array.isArray(preview?.validation_warnings)
+      ? preview.validation_warnings
+      : [],
   };
 };
 
 export const sendBroadcast = async (broadcastId: number): Promise<Broadcast> => {
-  const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/send`, {
-    method: "POST",
-  });
+  const broadcast = await withBroadcastTimeout((signal) =>
+    apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/send`, {
+      method: "POST",
+      signal,
+    })
+  );
   return normalizeBroadcast(broadcast);
 };
 

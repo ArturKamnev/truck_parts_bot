@@ -560,8 +560,14 @@ class BroadcastResponse(BaseModel):
 
 
 class BroadcastPreviewResponse(BroadcastResponse):
+    draft_id: int
+    text: str | None = None
+    buttons: list[str]
+    attachment: dict[str, str | int | None] | None = None
+    estimated_recipients: int
     eligible_recipient_count: int
     available_buttons: dict[str, bool]
+    validation_warnings: list[str]
 
 
 class BroadcastContentRequest(BaseModel):
@@ -590,6 +596,38 @@ def _broadcast_response(b) -> BroadcastResponse:
         created_at=b.created_at,
         started_at=b.started_at,
         completed_at=b.completed_at,
+    )
+
+
+def _broadcast_preview_response(
+    b,
+    *,
+    recipient_count: int,
+    broadcast_srv,
+) -> BroadcastPreviewResponse:
+    response = _broadcast_response(b)
+    attachment = None
+    if b.file_name:
+        attachment = {
+            "file_name": b.file_name,
+            "mime_type": b.mime_type,
+            "file_size": b.file_size,
+            "content_type": b.content_type,
+        }
+    buttons = [] if b.button_selection == BroadcastButtonSelection.NONE.value else [b.button_selection]
+    return BroadcastPreviewResponse(
+        **response.model_dump(),
+        draft_id=b.id,
+        text=b.content_preview,
+        buttons=buttons,
+        attachment=attachment,
+        estimated_recipients=recipient_count,
+        eligible_recipient_count=recipient_count,
+        available_buttons={
+            selection.value: broadcast_srv.is_button_selection_available(selection)
+            for selection in BroadcastButtonSelection
+        },
+        validation_warnings=[],
     )
 
 
@@ -668,9 +706,14 @@ async def create_broadcast_draft(
     broadcast_srv = Depends(get_broadcast_service),
 ) -> BroadcastResponse:
     try:
-        broadcast = await broadcast_srv.start_draft(
-            session, owner_telegram_id=current_user_session["telegram_user_id"]
+        owner_telegram_id = current_user_session["telegram_user_id"]
+        broadcast = await broadcast_srv.get_active_draft(
+            session, owner_telegram_id=owner_telegram_id
         )
+        if broadcast is None or broadcast.status not in {"DRAFT", "READY"}:
+            broadcast = await broadcast_srv.start_draft(
+                session, owner_telegram_id=owner_telegram_id
+            )
         await session.commit()
         await session.refresh(broadcast)
         return _broadcast_response(broadcast)
@@ -775,14 +818,10 @@ async def preview_broadcast(
             broadcast_id=broadcast_id,
         )
         await session.commit()
-        response = _broadcast_response(broadcast)
-        return BroadcastPreviewResponse(
-            **response.model_dump(),
-            eligible_recipient_count=recipient_count,
-            available_buttons={
-                selection.value: broadcast_srv.is_button_selection_available(selection)
-                for selection in BroadcastButtonSelection
-            },
+        return _broadcast_preview_response(
+            broadcast,
+            recipient_count=recipient_count,
+            broadcast_srv=broadcast_srv,
         )
     except AuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))

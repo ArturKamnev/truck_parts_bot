@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, History, Paperclip, Radio, RefreshCw, Send, X } from "lucide-react";
 import {
   cancelBroadcast,
@@ -20,6 +20,16 @@ interface BroadcastsPageProps {
 }
 
 const buttonOptions = ["none", "instagram", "site", "both"] as const;
+type BroadcastFlowState =
+  | "composer"
+  | "saving"
+  | "preview_loading"
+  | "validation_error"
+  | "preview_ready"
+  | "sending"
+  | "sent"
+  | "failed"
+  | "cancelled";
 
 export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
   const [history, setHistory] = useState<Broadcast[]>([]);
@@ -30,6 +40,8 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
   const [buttonSelection, setButtonSelection] = useState("none");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const [flowState, setFlowState] = useState<BroadcastFlowState>("composer");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -51,34 +63,59 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
     loadHistory();
   }, []);
 
+  const broadcastErrorMessage = (err: unknown, fallbackKey: string) => {
+    const apiError = err as ApiError;
+    if (apiError.message === "Broadcast request timed out") {
+      return t("broadcast.error_timeout", locale);
+    }
+    return apiError.message || t(fallbackKey, locale);
+  };
+
   const handleCreatePreview = async () => {
-    if (!canPreview) return;
+    if (!canPreview || submittingRef.current) return;
+    if (text.trim().length === 0 && attachment === null) {
+      setFlowState("validation_error");
+      setError(t("broadcast.error_content_required", locale));
+      return;
+    }
     try {
+      submittingRef.current = true;
       setSubmitting(true);
+      setFlowState("saving");
       setError(null);
       setSuccess(null);
       const activeDraft = draft || await createBroadcastDraft();
+      setDraft(activeDraft);
       const contentDraft = attachment
         ? await setBroadcastAttachment(activeDraft.id, attachment, text.trim())
         : await setBroadcastContent(activeDraft.id, text.trim());
+      setDraft(contentDraft);
       const readyDraft = await setBroadcastButtons(contentDraft.id, buttonSelection);
-      const nextPreview = await previewBroadcast(readyDraft.id);
       setDraft(readyDraft);
+      setFlowState("preview_loading");
+      const nextPreview = await previewBroadcast(readyDraft.id);
+      setDraft(nextPreview);
       setPreview(nextPreview);
+      setFlowState("preview_ready");
     } catch (err) {
-      setError((err as ApiError).message || t("broadcast.error_preview", locale));
+      setFlowState("failed");
+      setError(broadcastErrorMessage(err, "broadcast.error_preview"));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   const handleSend = async () => {
-    if (!draft) return;
+    if (!draft || submittingRef.current) return;
     try {
+      submittingRef.current = true;
       setSubmitting(true);
+      setFlowState("sending");
       setError(null);
       await sendBroadcast(draft.id);
       setSuccess(t("broadcast.sent", locale));
+      setFlowState("sent");
       setDraft(null);
       setPreview(null);
       setText("");
@@ -86,8 +123,10 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
       setButtonSelection("none");
       await loadHistory();
     } catch (err) {
-      setError((err as ApiError).message || t("broadcast.error_send", locale));
+      setFlowState("failed");
+      setError(broadcastErrorMessage(err, "broadcast.error_send"));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -106,6 +145,14 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
     setAttachment(null);
     setButtonSelection("none");
     setError(null);
+    setFlowState("cancelled");
+    setSuccess(t("broadcast.cancelled", locale));
+  };
+
+  const handleBackToEdit = () => {
+    setPreview(null);
+    setError(null);
+    setFlowState("composer");
   };
 
   const statusLabel = (status: string) => {
@@ -143,6 +190,10 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
         </div>
       )}
 
+      <div style={{ border: "1px solid hsl(var(--border-hsl))", background: "rgba(255,255,255,0.03)", color: "hsl(var(--text-hint-hsl))", borderRadius: "8px", padding: "10px 12px", fontSize: "12px", fontWeight: 700 }}>
+        {t(`broadcast.state_${flowState}`, locale)}
+      </div>
+
       <section style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <Radio size={16} style={{ color: "hsl(var(--accent-hsl))" }} />
@@ -150,7 +201,12 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
         </div>
         <textarea
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value);
+            setPreview(null);
+            setSuccess(null);
+            setFlowState("composer");
+          }}
           disabled={submitting}
           placeholder={t("broadcast.text_placeholder", locale)}
           style={{ minHeight: "132px", resize: "vertical", borderRadius: "8px", border: "1px solid hsl(var(--border-hsl))", background: "hsl(var(--card-bg-hsl))", color: "#fff", padding: "12px", fontSize: "14px", lineHeight: 1.5, outline: "none" }}
@@ -183,6 +239,9 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
               onClick={(event) => {
                 event.preventDefault();
                 setAttachment(null);
+                setPreview(null);
+                setSuccess(null);
+                setFlowState("composer");
               }}
               style={{ border: "none", background: "transparent", color: "hsl(var(--text-hint-hsl))", cursor: "pointer" }}
             >
@@ -193,7 +252,12 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
             type="file"
             disabled={submitting}
             accept="image/*,video/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx"
-            onChange={(event) => setAttachment(event.target.files?.[0] || null)}
+            onChange={(event) => {
+              setAttachment(event.target.files?.[0] || null);
+              setPreview(null);
+              setSuccess(null);
+              setFlowState("composer");
+            }}
             style={{ display: "none" }}
           />
         </label>
@@ -202,7 +266,12 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
             <button
               key={option}
               type="button"
-              onClick={() => setButtonSelection(option)}
+              onClick={() => {
+                setButtonSelection(option);
+                setPreview(null);
+                setSuccess(null);
+                setFlowState("composer");
+              }}
               disabled={submitting}
               style={{ padding: "10px", borderRadius: "8px", border: buttonSelection === option ? "1px solid hsl(var(--accent-hsl))" : "1px solid hsl(var(--border-hsl))", background: buttonSelection === option ? "rgba(82,136,193,0.14)" : "rgba(255,255,255,0.03)", color: buttonSelection === option ? "hsl(var(--accent-hsl))" : "#fff", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
             >
@@ -216,7 +285,11 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
             disabled={!canPreview}
             style={{ flex: 1, padding: "12px", borderRadius: "8px", border: "none", background: "hsl(var(--accent-hsl))", color: "#fff", fontWeight: 700, cursor: canPreview ? "pointer" : "not-allowed", opacity: canPreview ? 1 : 0.5 }}
           >
-            {submitting ? t("common.saving", locale) : t("broadcast.preview", locale)}
+            {submitting && flowState === "saving"
+              ? t("broadcast.state_saving", locale)
+              : submitting && flowState === "preview_loading"
+                ? t("broadcast.state_preview_loading", locale)
+                : t("broadcast.preview", locale)}
           </button>
           {(draft || preview) && (
             <button
@@ -235,23 +308,39 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
         <section style={{ border: "1px solid hsl(var(--border-hsl))", background: "hsl(var(--card-bg-hsl))", borderRadius: "8px", padding: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
           <h3 style={{ margin: 0, fontSize: "15px", color: "#fff" }}>{t("broadcast.preview_title", locale)}</h3>
           <div style={{ whiteSpace: "pre-wrap", color: "#fff", fontSize: "14px", lineHeight: 1.5 }}>{preview.content_preview}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>
+            <span>{t("broadcast.preview_buttons", locale)}</span>
+            <b style={{ color: "#fff" }}>{t(`broadcast.button_${preview.button_selection || "none"}`, locale)}</b>
+          </div>
           {preview.file_name && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "12px" }}>
               <Paperclip size={14} />
               <span>{preview.file_name}</span>
             </div>
           )}
+          {preview.validation_warnings?.map((warning) => (
+            <div key={warning} style={{ color: "#ffd166", fontSize: "12px" }}>{warning}</div>
+          ))}
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>
             <span>{t("broadcast.recipients", locale)}</span>
             <b style={{ color: "#fff" }}>{preview.eligible_recipient_count}</b>
           </div>
-          <button
-            onClick={handleSend}
-            disabled={submitting}
-            style={{ padding: "12px", borderRadius: "8px", border: "none", background: "hsl(var(--success-hsl))", color: "#fff", fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
-          >
-            <Send size={16} /> {t("broadcast.confirm_send", locale)}
-          </button>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              onClick={handleBackToEdit}
+              disabled={submitting}
+              style={{ flex: 1, padding: "12px", borderRadius: "8px", border: "1px solid hsl(var(--border-hsl))", background: "rgba(255,255,255,0.04)", color: "#fff", fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer" }}
+            >
+              {t("broadcast.back_edit", locale)}
+            </button>
+            <button
+              onClick={handleSend}
+              disabled={submitting}
+              style={{ flex: 1, padding: "12px", borderRadius: "8px", border: "none", background: "hsl(var(--success-hsl))", color: "#fff", fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+            >
+              <Send size={16} /> {submitting ? t("broadcast.state_sending", locale) : t("broadcast.confirm_send", locale)}
+            </button>
+          </div>
         </section>
       )}
 
