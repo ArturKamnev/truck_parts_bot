@@ -87,6 +87,38 @@ class FakeBot:
 
     async def send_message(self, **kwargs):
         self.sent_messages.append(kwargs)
+        return SimpleNamespace(message_id=len(self.sent_messages), text=kwargs.get("text"))
+
+    async def send_photo(self, **kwargs):
+        self.sent_messages.append({"method": "send_photo", **kwargs})
+        return SimpleNamespace(
+            message_id=len(self.sent_messages),
+            photo=[SimpleNamespace(file_id="photo-file-id", file_unique_id="photo-unique-id")],
+        )
+
+    async def send_video(self, **kwargs):
+        self.sent_messages.append({"method": "send_video", **kwargs})
+        return SimpleNamespace(
+            message_id=len(self.sent_messages),
+            video=SimpleNamespace(file_id="video-file-id", file_unique_id="video-unique-id"),
+        )
+
+    async def send_audio(self, **kwargs):
+        self.sent_messages.append({"method": "send_audio", **kwargs})
+        return SimpleNamespace(
+            message_id=len(self.sent_messages),
+            audio=SimpleNamespace(file_id="audio-file-id", file_unique_id="audio-unique-id"),
+        )
+
+    async def send_document(self, **kwargs):
+        self.sent_messages.append({"method": "send_document", **kwargs})
+        return SimpleNamespace(
+            message_id=len(self.sent_messages),
+            document=SimpleNamespace(
+                file_id="document-file-id",
+                file_unique_id="document-unique-id",
+            ),
+        )
 
     async def copy_message(self, **kwargs):
         chat_id = kwargs["chat_id"]

@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
-import { ArrowLeft, RefreshCw, AlertTriangle, ShieldCheck } from "lucide-react";
+import { ArrowLeft, RefreshCw, AlertTriangle, Paperclip, ShieldCheck } from "lucide-react";
 import { 
   getCustomerTicketDetails, getCustomerTicketMessages, 
   getManagerTicketDetails, getManagerTicketMessages, 
   claimTicket, closeTicket, sendTicketMessage, sendCustomerMessage,
+  uploadCustomerTicketFile, uploadManagerTicketFile,
   type Ticket, type TicketMessage 
 } from "../api/tickets";
 import { ChatBubble } from "../components/ChatBubble";
@@ -33,10 +34,12 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
   // Stage 3 interactive states
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [asSupervisor, setAsSupervisor] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadTicketAndMessages = async (isRefresh = false) => {
     try {
@@ -244,6 +247,43 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
     
     // Resend it
     await handleSend(failedMsg.textPreview);
+  };
+
+  const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || uploading || sending) return;
+    const caption = inputText.trim();
+    setInputText("");
+    setUploading(true);
+
+    const tempMsgId = -Date.now();
+    const tempMsg: TicketMessage = {
+      id: tempMsgId,
+      ticketId,
+      senderType: viewerRole === "customer" ? "customer" : (viewerRole === "owner" || viewerRole === "co_owner" ? "owner" : "manager"),
+      contentType: file.type.startsWith("image/") ? "photo" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "document",
+      textPreview: caption || file.name,
+      captionPreview: caption || file.name,
+      createdAt: new Date().toISOString(),
+      hasMedia: true,
+      fileName: file.name,
+      mimeType: file.type || null,
+      fileSize: file.size,
+    };
+    setMessages(prev => [...prev, tempMsg]);
+
+    try {
+      const persisted = viewerRole === "customer"
+        ? await uploadCustomerTicketFile(ticketId, file, caption)
+        : await uploadManagerTicketFile(ticketId, file, caption, asSupervisor);
+      setMessages(prev => prev.map(m => m.id === tempMsgId ? persisted : m));
+    } catch (err) {
+      setMessages(prev => prev.map(m => m.id === tempMsgId ? { ...m, deliveryStatus: "FAILED" } : m));
+      alert((err as ApiError).message || t("chat.upload_failed", locale));
+    } finally {
+      setUploading(false);
+    }
   };
 
   const customerName = ticket 
@@ -468,6 +508,13 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
             borderTop: "1px solid hsl(var(--border-hsl))",
           }}
         >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*,audio/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx"
+            onChange={handleFileSelected}
+            style={{ display: "none" }}
+          />
           {ticket.status === "CLOSED" || ticket.status === "CANCELLED_BY_CUSTOMER" ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "13px" }}>
               <AlertTriangle size={16} />
@@ -500,9 +547,27 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 }}
               />
               <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending || uploading}
+                title={t("chat.attach_file", locale)}
+                style={{
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "19px",
+                  backgroundColor: "hsl(var(--bg-secondary-hsl))",
+                  color: "hsl(var(--accent-hsl))",
+                  border: "1px solid hsl(var(--border-hsl))",
+                  cursor: sending || uploading ? "not-allowed" : "pointer",
+                  opacity: sending || uploading ? 0.5 : 1,
+                }}
+              >
+                <Paperclip size={17} />
+              </button>
+              <button
                 type="submit"
                 className="composer-send-btn"
-                disabled={sending || !inputText.trim()}
+                disabled={sending || uploading || !inputText.trim()}
                 style={{
                   padding: "8px 16px",
                   borderRadius: "18px",
@@ -512,17 +577,17 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                   fontWeight: 600,
                   fontSize: "13px",
                   cursor: "pointer",
-                  opacity: sending || !inputText.trim() ? 0.5 : 1,
+                  opacity: sending || uploading || !inputText.trim() ? 0.5 : 1,
                 }}
               >
-                {t("chat.send", locale) || "Send"}
+                {uploading ? t("chat.uploading", locale) : t("chat.send", locale) || "Send"}
               </button>
             </form>
           ) : (viewerRole === "owner" || viewerRole === "co_owner") && !asSupervisor ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "13px" }}>
               <span>{t("chat.readonly_mode_supervisor", locale) || "You are in read-only mode. Enable Supervisor Mode above to write."}</span>
             </div>
-          ) : ticket.status === "OPEN" ? (
+          ) : ticket.status === "OPEN" && viewerRole === "manager" ? (
             <button
               onClick={handleClaim}
               style={{
@@ -566,9 +631,27 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                 }}
               />
               <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={sending || uploading}
+                title={t("chat.attach_file", locale)}
+                style={{
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "19px",
+                  backgroundColor: "hsl(var(--bg-secondary-hsl))",
+                  color: "hsl(var(--accent-hsl))",
+                  border: "1px solid hsl(var(--border-hsl))",
+                  cursor: sending || uploading ? "not-allowed" : "pointer",
+                  opacity: sending || uploading ? 0.5 : 1,
+                }}
+              >
+                <Paperclip size={17} />
+              </button>
+              <button
                 type="submit"
                 className="composer-send-btn"
-                disabled={sending || !inputText.trim()}
+                disabled={sending || uploading || !inputText.trim()}
                 style={{
                   padding: "8px 16px",
                   borderRadius: "18px",
@@ -578,10 +661,10 @@ export const TicketChatPage: React.FC<TicketChatPageProps> = ({
                   fontWeight: 600,
                   fontSize: "13px",
                   cursor: "pointer",
-                  opacity: sending || !inputText.trim() ? 0.5 : 1,
+                  opacity: sending || uploading || !inputText.trim() ? 0.5 : 1,
                 }}
               >
-                {t("chat.send", locale) || "Send"}
+                {uploading ? t("chat.uploading", locale) : t("chat.send", locale) || "Send"}
               </button>
             </form>
           )}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, UTC
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.api.schemas.tickets import OwnerStatsResponse, TicketResponse
 from app.config import get_settings, Settings
 from app.db.models import OperatorSession, Ticket, StaffMember, User
 from app.db.session import get_session
+from app.services.media_service import store_upload
 from app.services.statistics_service import StatisticsService
 from app.utils.enums import BroadcastButtonSelection, StaffRole, StaffStatus, TicketStatus
 from app.utils.exceptions import AuthorizationError, TicketStateError
@@ -440,6 +441,9 @@ class BroadcastResponse(BaseModel):
     status: str
     content_type: str | None = None
     content_preview: str | None
+    file_name: str | None = None
+    mime_type: str | None = None
+    file_size: int | None = None
     button_selection: str
     recipient_count: int
     delivered_count: int
@@ -470,6 +474,9 @@ def _broadcast_response(b) -> BroadcastResponse:
         status=b.status,
         content_type=b.content_type,
         content_preview=b.content_preview,
+        file_name=b.file_name,
+        mime_type=b.mime_type,
+        file_size=b.file_size,
         button_selection=b.button_selection,
         recipient_count=b.recipient_count,
         delivered_count=b.delivered_count,
@@ -580,6 +587,34 @@ async def set_broadcast_text_content(
             owner_telegram_id=current_user_session["telegram_user_id"],
             broadcast_id=broadcast_id,
             text=req.text,
+        )
+        await session.commit()
+        await session.refresh(broadcast)
+        return _broadcast_response(broadcast)
+    except AuthorizationError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except TicketStateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.post("/broadcasts/{broadcast_id}/attachment", response_model=BroadcastResponse, dependencies=[Depends(verify_owner_or_co_owner_role)])
+async def set_broadcast_attachment(
+    broadcast_id: int,
+    file: UploadFile = File(...),
+    caption: str | None = Form(None),
+    current_user_session: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    broadcast_srv = Depends(get_broadcast_service),
+) -> BroadcastResponse:
+    try:
+        upload = await store_upload(file, settings)
+        broadcast = await broadcast_srv.set_uploaded_attachment(
+            session,
+            owner_telegram_id=current_user_session["telegram_user_id"],
+            broadcast_id=broadcast_id,
+            upload=upload,
+            caption=caption,
         )
         await session.commit()
         await session.refresh(broadcast)

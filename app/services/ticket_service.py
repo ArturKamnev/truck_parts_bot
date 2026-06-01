@@ -454,6 +454,12 @@ class TicketService:
         text_preview: str | None = None,
         media_group_id: str | None = None,
         delivery_status: TicketMessageDeliveryStatus | str = TicketMessageDeliveryStatus.STORED,
+        file_id: str | None = None,
+        file_unique_id: str | None = None,
+        file_name: str | None = None,
+        mime_type: str | None = None,
+        file_size: int | None = None,
+        file_path: str | None = None,
     ) -> TicketMessage:
         if isinstance(content_type, TicketMessageContentType):
             content_type_value = content_type.value
@@ -474,6 +480,12 @@ class TicketService:
             text_preview=text_preview or content,
             media_group_id=media_group_id,
             delivery_status=delivery_status_value,
+            file_id=file_id,
+            file_unique_id=file_unique_id,
+            file_name=file_name,
+            mime_type=mime_type,
+            file_size=file_size,
+            file_path=file_path,
             content=content,
         )
         session.add(message)

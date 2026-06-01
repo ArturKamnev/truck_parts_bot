@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { API_BASE_URL, apiRequest, getStoredToken } from "./client";
 import {
   normalizeTicket,
   normalizeTicketMessage,
@@ -30,6 +30,10 @@ export interface TicketMessage {
   createdAt: string;
   hasMedia: boolean;
   deliveryStatus?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  fileSize?: number | null;
+  downloadUrl?: string | null;
 }
 
 export interface OwnerStats {
@@ -136,6 +140,62 @@ export const sendTicketMessage = async (
     body: JSON.stringify({ text, asSupervisor }),
   });
   return normalizeTicketMessage(message);
+};
+
+const uploadTicketFile = async (
+  path: string,
+  file: File,
+  caption?: string,
+  asSupervisor?: boolean
+): Promise<TicketMessage> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (caption?.trim()) {
+    formData.append("caption", caption.trim());
+  }
+  if (typeof asSupervisor === "boolean") {
+    formData.append("asSupervisor", String(asSupervisor));
+  }
+
+  const token = getStoredToken();
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+  if (!response.ok) {
+    let message = response.statusText || "Upload failed";
+    try {
+      const data = await response.json();
+      message = data.detail || message;
+    } catch (err) {
+      // ignore
+    }
+    throw { status: response.status, message };
+  }
+  return normalizeTicketMessage(await response.json());
+};
+
+export const uploadCustomerTicketFile = async (
+  ticketId: number,
+  file: File,
+  caption?: string
+): Promise<TicketMessage> => {
+  return uploadTicketFile(`/api/customer/tickets/${ticketId}/messages/upload`, file, caption);
+};
+
+export const uploadManagerTicketFile = async (
+  ticketId: number,
+  file: File,
+  caption?: string,
+  asSupervisor: boolean = false
+): Promise<TicketMessage> => {
+  return uploadTicketFile(
+    `/api/manager/tickets/${ticketId}/messages/upload`,
+    file,
+    caption,
+    asSupervisor
+  );
 };
 
 export interface StaffMember {
@@ -270,6 +330,9 @@ export interface Broadcast {
   status: string;
   content_type?: string | null;
   content_preview: string | null;
+  file_name?: string | null;
+  mime_type?: string | null;
+  file_size?: number | null;
   button_selection?: string;
   recipient_count: number;
   delivered_count: number;
@@ -336,6 +399,33 @@ export const setBroadcastContent = async (broadcastId: number, text: string): Pr
   return normalizeBroadcast(broadcast);
 };
 
+export const setBroadcastAttachment = async (
+  broadcastId: number,
+  file: File,
+  caption?: string
+): Promise<Broadcast> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (caption?.trim()) formData.append("caption", caption.trim());
+  const token = getStoredToken();
+  const response = await fetch(`${API_BASE_URL}/api/owner/broadcasts/${broadcastId}/attachment`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  });
+  if (!response.ok) {
+    let message = response.statusText || "Upload failed";
+    try {
+      const data = await response.json();
+      message = data.detail || message;
+    } catch (err) {
+      // ignore
+    }
+    throw { status: response.status, message };
+  }
+  return normalizeBroadcast(await response.json());
+};
+
 export const setBroadcastButtons = async (broadcastId: number, selection: string): Promise<Broadcast> => {
   const broadcast = await apiRequest<Broadcast>(`/api/owner/broadcasts/${broadcastId}/buttons`, {
     method: "PUT",
@@ -368,6 +458,5 @@ export const cancelBroadcast = async (broadcastId: number): Promise<Broadcast> =
   });
   return normalizeBroadcast(broadcast);
 };
-
 
 

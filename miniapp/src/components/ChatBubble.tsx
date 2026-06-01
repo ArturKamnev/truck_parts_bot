@@ -1,6 +1,7 @@
-import React from "react";
-import { Image, Volume2, Video, FileText } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { Download, Image, Volume2, Video, FileText } from "lucide-react";
 import { type TicketMessage } from "../api/tickets";
+import { API_BASE_URL, getStoredToken } from "../api/client";
 import { safeTime } from "../utils/normalization";
 import { t } from "../i18n";
 
@@ -12,6 +13,7 @@ interface ChatBubbleProps {
 }
 
 export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onRetry, locale }) => {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
   // Determine alignment
   // If customer is viewing: customer messages are on the right, manager/system on the left.
   // If manager/owner is viewing: manager/system are on the right, customer on the left.
@@ -38,6 +40,47 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
   };
 
   const formattedTime = safeTime(message.createdAt);
+
+  useEffect(() => {
+    if (!message.downloadUrl || !message.mimeType?.startsWith("image/")) return;
+    let active = true;
+    let url: string | null = null;
+    const loadPreview = async () => {
+      const token = getStoredToken();
+      const response = await fetch(`${API_BASE_URL}${message.downloadUrl}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      if (!active) return;
+      url = URL.createObjectURL(blob);
+      setObjectUrl(url);
+    };
+    loadPreview().catch(() => undefined);
+    return () => {
+      active = false;
+      if (url) URL.revokeObjectURL(url);
+      setObjectUrl(null);
+    };
+  }, [message.downloadUrl, message.mimeType]);
+
+  const handleDownload = async () => {
+    if (!message.downloadUrl) return;
+    const token = getStoredToken();
+    const response = await fetch(`${API_BASE_URL}${message.downloadUrl}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!response.ok) return;
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = message.fileName || "attachment";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   if (isSystem) {
     return (
@@ -103,6 +146,18 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
         {/* Message Content */}
         {message.hasMedia ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {objectUrl && (
+              <img
+                src={objectUrl}
+                alt={message.fileName || t("chat.media_photo", locale)}
+                style={{
+                  maxWidth: "220px",
+                  maxHeight: "220px",
+                  borderRadius: "8px",
+                  objectFit: "cover",
+                }}
+              />
+            )}
             <div
               style={{
                 display: "flex",
@@ -125,8 +180,32 @@ export const ChatBubble: React.FC<ChatBubbleProps> = ({ message, viewerRole, onR
                 </span>
               </div>
               <span style={{ fontSize: "11px", opacity: 0.7 }}>
-                {t("chat.media_hint", locale)}
+                {message.fileName || t("chat.media_hint", locale)}
               </span>
+              {message.downloadUrl && (
+                <button
+                  type="button"
+                  onClick={handleDownload}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    width: "fit-content",
+                    marginTop: "2px",
+                    padding: "5px 8px",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    borderRadius: "6px",
+                    background: "rgba(255,255,255,0.08)",
+                    color: "#fff",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Download size={13} />
+                  {t("chat.download_file", locale)}
+                </button>
+              )}
             </div>
             {message.captionPreview && (
               <span style={{ fontSize: "14px", whiteSpace: "pre-wrap" }}>{message.captionPreview}</span>

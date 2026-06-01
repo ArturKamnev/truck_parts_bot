@@ -138,7 +138,9 @@ class MessageRelayService:
         message: Any | None = None,
         text: str | None = None,
     ) -> None:
-        if not self._ticket_service.can_send_manager_reply(ticket, actor_telegram_id):
+        if not await self._ticket_service.can_send_manager_reply_db(
+            session, ticket, actor_telegram_id
+        ):
             raise AuthorizationError("This operator cannot reply to the customer")
         metadata = self.metadata_from_message(message) if message is not None else None
         content = metadata.text_preview if metadata is not None else (text or "")
@@ -149,11 +151,8 @@ class MessageRelayService:
         if content.startswith("/"):
             raise AuthorizationError("Commands are not relayed")
 
-        sender_type = (
-            TicketMessageSenderType.OWNER
-            if actor_telegram_id == self._settings.owner_id
-            else TicketMessageSenderType.MANAGER
-        )
+        role = await self._ticket_service._authorization.detect_role_db(actor_telegram_id, session)
+        sender_type = TicketMessageSenderType.OWNER if role in {"owner", "co_owner"} else TicketMessageSenderType.MANAGER
         ticket_message = self._ticket_service.add_ticket_message(
             session,
             ticket=ticket,

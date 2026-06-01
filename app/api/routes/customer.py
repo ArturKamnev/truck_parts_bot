@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import logging
+import os
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -12,18 +17,26 @@ from app.api.dependencies import (
     get_ticket_service,
     get_relay_service,
 )
+from app.api.message_responses import message_response
 from app.api.schemas.tickets import (
     MessageResponse,
     TicketResponse,
     CreateTicketRequest,
     MessageCreateRequest,
 )
+from app.config import Settings, get_settings
 from app.db.models import Ticket, TicketMessage, User
 from app.db.session import get_session
-from app.utils.enums import TicketMessageContentType, TicketMessageSenderType, TicketMessageDeliveryStatus
+from app.services.media_service import extract_sent_file_ids, send_stored_upload, store_upload
+from app.utils.enums import TicketMessageDeliveryStatus, TicketMessageSenderType
 from app.utils.exceptions import DuplicateActiveTicketError
 
 router = APIRouter(prefix="/customer", tags=["customer"])
+logger = logging.getLogger(__name__)
+
+
+def _customer_download_base(ticket_id: int) -> str:
+    return f"/api/customer/tickets/{ticket_id}/messages"
 
 
 def verify_customer_role(session_payload: dict = Depends(get_current_user_session)) -> None:
@@ -148,20 +161,7 @@ async def list_customer_ticket_messages(
     result = await session.scalars(stmt)
     messages = result.all()
     
-    return [
-        MessageResponse(
-            id=msg.id,
-            ticketId=msg.ticket_id,
-            senderType=msg.sender_type,
-            contentType=msg.content_type,
-            textPreview=msg.text_preview,
-            captionPreview=msg.content if msg.content_type != "text" else None,
-            createdAt=msg.created_at,
-            hasMedia=msg.content_type != "text",
-            deliveryStatus=msg.delivery_status,
-        )
-        for msg in messages
-    ]
+    return [message_response(msg, download_base=_customer_download_base(ticket_id)) for msg in messages]
 
 
 @router.post("/tickets", response_model=TicketResponse, dependencies=[Depends(verify_customer_role)])
@@ -263,20 +263,115 @@ async def create_customer_message(
             detail="Failed to save message",
         )
         
-    return MessageResponse(
-        id=msg.id,
-        ticketId=msg.ticket_id,
-        senderType=msg.sender_type,
-        contentType=msg.content_type,
-        textPreview=msg.text_preview,
-        captionPreview=msg.content if msg.content_type != "text" else None,
-        createdAt=msg.created_at,
-        hasMedia=msg.content_type != "text",
-        deliveryStatus=msg.delivery_status,
+    return message_response(msg, download_base=_customer_download_base(ticket.id))
+
+
+@router.post(
+    "/tickets/{ticket_id}/messages/upload",
+    response_model=MessageResponse,
+    dependencies=[Depends(verify_customer_role)],
+)
+async def upload_customer_ticket_file(
+    ticket_id: int,
+    file: UploadFile = File(...),
+    caption: str | None = Form(None),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    ticket_service=Depends(get_ticket_service),
+    bot=Depends(get_bot),
+) -> MessageResponse:
+    ticket = await ticket_service.get_ticket(session, ticket_id=ticket_id)
+    if ticket.customer_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: You do not own this ticket",
+        )
+    if ticket.status not in ("OPEN", "CLAIMED"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot send files to a closed or cancelled ticket",
+        )
+
+    upload = await store_upload(file, settings)
+    clean_caption = (caption or "").strip()
+    content = clean_caption or upload.file_name
+    message = ticket_service.add_ticket_message(
+        session,
+        ticket=ticket,
+        sender_type=TicketMessageSenderType.CUSTOMER,
+        sender_telegram_id=current_user.telegram_user_id,
+        content=content,
+        content_type=upload.content_type,
+        text_preview=content,
+        delivery_status=TicketMessageDeliveryStatus.STORED,
+        file_name=upload.file_name,
+        mime_type=upload.mime_type,
+        file_size=upload.file_size,
+        file_path=upload.path,
+    )
+    await session.flush()
+
+    destination_ids: list[int] = []
+    if ticket.status == "CLAIMED" and ticket.assigned_manager_telegram_id:
+        destination_ids = [ticket.assigned_manager_telegram_id]
+    elif ticket.status == "OPEN":
+        destination_ids = await ticket_service.selected_owner_ids_for_ticket(session, ticket_id=ticket.id)
+
+    delivered = True
+    for destination_id in destination_ids:
+        try:
+            sent = await send_stored_upload(
+                bot,
+                chat_id=destination_id,
+                upload=upload,
+                caption=f"Ticket #{ticket.id}: {content}",
+            )
+            file_id, file_unique_id = extract_sent_file_ids(sent)
+            message.file_id = message.file_id or file_id
+            message.file_unique_id = message.file_unique_id or file_unique_id
+        except Exception as exc:
+            logger.warning("Failed to relay customer upload ticket_id=%s: %s", ticket.id, exc)
+            delivered = False
+
+    message.delivery_status = (
+        TicketMessageDeliveryStatus.DELIVERED.value
+        if destination_ids and delivered
+        else TicketMessageDeliveryStatus.FAILED.value
+        if destination_ids
+        else TicketMessageDeliveryStatus.STORED.value
+    )
+    await session.commit()
+    await session.refresh(message)
+    return message_response(message, download_base=_customer_download_base(ticket.id))
+
+
+@router.get(
+    "/tickets/{ticket_id}/messages/{message_id}/file",
+    dependencies=[Depends(verify_customer_role)],
+)
+async def download_customer_ticket_file(
+    ticket_id: int,
+    message_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    ticket = await session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+    if ticket.customer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    message = await session.get(TicketMessage, message_id)
+    if not message or message.ticket_id != ticket_id or not message.file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    if not os.path.isfile(message.file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(
+        message.file_path,
+        media_type=message.mime_type or "application/octet-stream",
+        filename=message.file_name or "attachment",
     )
 
-
-from pydantic import BaseModel
 
 class BroadcastToggleRequest(BaseModel):
     enabled: bool
@@ -294,4 +389,3 @@ async def toggle_broadcast(
     current_user.broadcasts_enabled = req.enabled
     await session.commit()
     return current_user.broadcasts_enabled
-

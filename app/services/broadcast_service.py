@@ -16,6 +16,7 @@ from app.config import Settings
 from app.db.models import Broadcast, BroadcastDelivery, OperatorSession, StaffMember, User
 from app.db.session import SessionLocal
 from app.services.authorization_service import AuthorizationService
+from app.services.media_service import StoredUpload, send_stored_upload
 from app.services.relay_service import MessageRelayService
 from app.utils.enums import (
     BroadcastButtonSelection,
@@ -143,8 +144,44 @@ class BroadcastService:
         broadcast.source_message_id = None
         broadcast.media_group_id = None
         broadcast.media_group_message_ids = None
+        broadcast.file_name = None
+        broadcast.mime_type = None
+        broadcast.file_size = None
+        broadcast.file_path = None
         broadcast.content_type = TicketMessageContentType.TEXT.value
         broadcast.content_preview = clean_text
+        broadcast.status = BroadcastStatus.DRAFT.value
+        owner_session = await self._operator_session(session, owner_telegram_id)
+        owner_session.active_broadcast_id = broadcast.id
+        owner_session.workflow_state = OwnerWorkflowState.CHOOSING_BROADCAST_BUTTONS.value
+        owner_session.updated_at = datetime.now(UTC)
+        await session.flush()
+        return broadcast
+
+    async def set_uploaded_attachment(
+        self,
+        session: AsyncSession,
+        *,
+        owner_telegram_id: int,
+        broadcast_id: int,
+        upload: StoredUpload,
+        caption: str | None = None,
+    ) -> Broadcast:
+        await self._ensure_broadcaster(session, owner_telegram_id)
+        broadcast = await self._owned_broadcast(session, owner_telegram_id, broadcast_id)
+        if broadcast.status not in {BroadcastStatus.DRAFT.value, BroadcastStatus.READY.value}:
+            raise TicketStateError("Broadcast draft can no longer be changed.")
+        clean_caption = (caption or "").strip()
+        broadcast.source_chat_id = None
+        broadcast.source_message_id = None
+        broadcast.media_group_id = None
+        broadcast.media_group_message_ids = None
+        broadcast.content_type = upload.content_type.value
+        broadcast.content_preview = clean_caption or upload.file_name
+        broadcast.file_name = upload.file_name
+        broadcast.mime_type = upload.mime_type
+        broadcast.file_size = upload.file_size
+        broadcast.file_path = upload.path
         broadcast.status = BroadcastStatus.DRAFT.value
         owner_session = await self._operator_session(session, owner_telegram_id)
         owner_session.active_broadcast_id = broadcast.id
@@ -261,6 +298,23 @@ class BroadcastService:
             await bot.send_message(
                 chat_id=destination_chat_id,
                 text=broadcast.content_preview,
+                reply_markup=reply_markup,
+            )
+            return
+        if broadcast.file_path:
+            await send_stored_upload(
+                bot,
+                chat_id=destination_chat_id,
+                upload=StoredUpload(
+                    path=broadcast.file_path,
+                    file_name=broadcast.file_name or "attachment",
+                    mime_type=broadcast.mime_type or "application/octet-stream",
+                    file_size=broadcast.file_size or 0,
+                    content_type=TicketMessageContentType(
+                        broadcast.content_type or TicketMessageContentType.DOCUMENT.value
+                    ),
+                ),
+                caption=broadcast.content_preview,
                 reply_markup=reply_markup,
             )
             return

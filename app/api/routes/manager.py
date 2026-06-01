@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select, or_
+import logging
+import os
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,22 +18,32 @@ from app.api.dependencies import (
     get_relay_service,
     get_ui_state_service,
 )
+from app.api.message_responses import message_response
 from app.api.schemas.tickets import (
     MessageResponse,
     TicketResponse,
     CloseTicketRequest,
     MessageCreateRequest,
 )
+from app.config import Settings, get_settings
 from app.db.models import Ticket, TicketMessage, User
 from app.db.session import get_session
-from app.utils.enums import TicketStatus
-from app.utils.exceptions import TicketStateError, AuthorizationError, UnsupportedRelayContentError
+from app.services.authorization_service import AuthorizationService
+from app.services.media_service import extract_sent_file_ids, send_stored_upload, store_upload
 from aiogram import Bot
-import logging
+from app.services.ticket_service import TicketService
+from app.services.ui_state_service import UIStateService
+from app.services.relay_service import RelayService
+from app.utils.enums import TicketMessageDeliveryStatus, TicketMessageSenderType, TicketStatus
+from app.utils.exceptions import AuthorizationError, TicketStateError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/manager", tags=["manager"])
+
+
+def _manager_download_base(ticket_id: int) -> str:
+    return f"/api/manager/tickets/{ticket_id}/messages"
 
 
 
@@ -241,20 +255,7 @@ async def list_manager_ticket_messages(
     result = await session.scalars(stmt)
     messages = result.all()
     
-    return [
-        MessageResponse(
-            id=msg.id,
-            ticketId=msg.ticket_id,
-            senderType=msg.sender_type,
-            contentType=msg.content_type,
-            textPreview=msg.text_preview,
-            captionPreview=msg.content if msg.content_type != "text" else None,
-            createdAt=msg.created_at,
-            hasMedia=msg.content_type != "text",
-            deliveryStatus=msg.delivery_status,
-        )
-        for msg in messages
-    ]
+    return [message_response(msg, download_base=_manager_download_base(ticket_id)) for msg in messages]
 
 
 @router.post("/tickets/{ticket_id}/claim", response_model=TicketResponse, dependencies=[Depends(verify_manager_or_owner_role)])
@@ -287,7 +288,6 @@ async def claim_manager_ticket(
 
         # Update customer keyboard and manager menu in Telegram
         try:
-            from app.utils.enums import CustomerMode
             await ui_state_service.show_current_menu(
                 bot, session, ticket.customer.telegram_user_id, reason="ticket_claimed_customer"
             )
@@ -404,7 +404,6 @@ async def close_manager_ticket(
 
     # Update keyboards
     try:
-        from app.utils.enums import CustomerMode
         await ui_state_service.show_current_menu(
             bot, session, ticket.customer.telegram_user_id, reason="ticket_closed_customer"
         )
@@ -501,17 +500,7 @@ async def send_manager_message(
         await session.commit()
         
         if ticket_message:
-            return MessageResponse(
-                id=ticket_message.id or 0,
-                ticketId=ticket_message.ticket_id,
-                senderType=ticket_message.sender_type,
-                contentType=ticket_message.content_type,
-                textPreview=ticket_message.text_preview,
-                captionPreview=ticket_message.content if ticket_message.content_type != "text" else None,
-                createdAt=ticket_message.created_at,
-                hasMedia=ticket_message.content_type != "text",
-                deliveryStatus=ticket_message.delivery_status,
-            )
+            return message_response(ticket_message, download_base=_manager_download_base(ticket_id))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Telegram delivery failed: {str(exc)}"
@@ -530,16 +519,122 @@ async def send_manager_message(
 
     await session.commit()
 
-    return MessageResponse(
-        id=ticket_message.id,
-        ticketId=ticket_message.ticket_id,
-        senderType=ticket_message.sender_type,
-        contentType=ticket_message.content_type,
-        textPreview=ticket_message.text_preview,
-        captionPreview=ticket_message.content if ticket_message.content_type != "text" else None,
-        createdAt=ticket_message.created_at,
-        hasMedia=ticket_message.content_type != "text",
-        deliveryStatus=ticket_message.delivery_status,
+    return message_response(ticket_message, download_base=_manager_download_base(ticket_id))
+
+
+@router.post(
+    "/tickets/{ticket_id}/messages/upload",
+    response_model=MessageResponse,
+    dependencies=[Depends(verify_manager_or_owner_role)],
+)
+async def upload_manager_ticket_file(
+    ticket_id: int,
+    file: UploadFile = File(...),
+    caption: str | None = Form(None),
+    as_supervisor: bool = Form(False, alias="asSupervisor"),
+    current_user: User = Depends(get_current_user),
+    session_payload: dict = Depends(get_current_user_session),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    bot: Bot = Depends(get_bot),
+    ticket_service: TicketService = Depends(get_ticket_service),
+) -> MessageResponse:
+    try:
+        ticket = await ticket_service.get_ticket(session, ticket_id=ticket_id)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+
+    is_owner = session_payload["role"] in {"owner", "co_owner"}
+    is_manager = session_payload["role"] == "manager"
+    if is_owner and not as_supervisor:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Owner must explicitly act as supervisor to perform write actions",
+        )
+    if ticket.status not in {TicketStatus.OPEN.value, TicketStatus.CLAIMED.value}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot send files to a closed or inactive ticket",
+        )
+    if is_manager and not is_owner:
+        if ticket.status != TicketStatus.CLAIMED.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Cannot send files to an unclaimed OPEN ticket",
+            )
+        if ticket.assigned_manager_telegram_id != current_user.telegram_user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not the assigned manager for this ticket",
+            )
+
+    upload = await store_upload(file, settings)
+    clean_caption = (caption or "").strip()
+    content = clean_caption or upload.file_name
+    sender_type = TicketMessageSenderType.OWNER if is_owner else TicketMessageSenderType.MANAGER
+    message = ticket_service.add_ticket_message(
+        session,
+        ticket=ticket,
+        sender_type=sender_type,
+        sender_telegram_id=current_user.telegram_user_id,
+        content=content,
+        content_type=upload.content_type,
+        text_preview=content,
+        delivery_status=TicketMessageDeliveryStatus.STORED,
+        file_name=upload.file_name,
+        mime_type=upload.mime_type,
+        file_size=upload.file_size,
+        file_path=upload.path,
+    )
+    await session.flush()
+
+    try:
+        sent = await send_stored_upload(
+            bot,
+            chat_id=ticket.customer.telegram_user_id,
+            upload=upload,
+            caption=content,
+        )
+        file_id, file_unique_id = extract_sent_file_ids(sent)
+        message.file_id = file_id
+        message.file_unique_id = file_unique_id
+        message.delivery_status = TicketMessageDeliveryStatus.DELIVERED.value
+    except Exception as exc:
+        logger.warning("Failed to relay manager upload ticket_id=%s: %s", ticket.id, exc)
+        message.delivery_status = TicketMessageDeliveryStatus.FAILED.value
+
+    await session.commit()
+    await session.refresh(message)
+    return message_response(message, download_base=_manager_download_base(ticket.id))
+
+
+@router.get(
+    "/tickets/{ticket_id}/messages/{message_id}/file",
+    dependencies=[Depends(verify_manager_or_owner_role)],
+)
+async def download_manager_ticket_file(
+    ticket_id: int,
+    message_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    ticket_service: TicketService = Depends(get_ticket_service),
+):
+    ticket = await session.get(Ticket, ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ticket not found")
+    if not await ticket_service.can_view_manager_ticket_db(
+        session, ticket, current_user.telegram_user_id
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    message = await session.get(TicketMessage, message_id)
+    if not message or message.ticket_id != ticket_id or not message.file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    if not os.path.isfile(message.file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    return FileResponse(
+        message.file_path,
+        media_type=message.mime_type or "application/octet-stream",
+        filename=message.file_name or "attachment",
     )
 
 
@@ -577,4 +672,3 @@ async def get_manager_stats(
         tickets_claimed=tickets_claimed,
         tickets_closed=tickets_closed,
     )
-

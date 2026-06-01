@@ -53,6 +53,12 @@ class Settings(BaseSettings):
         default="http://localhost:5173", alias="MINIAPP_ORIGIN"
     )
     miniapp_url: str | None = Field(default=None, alias="MINIAPP_URL")
+    miniapp_media_storage_dir: str = Field(
+        default="var/miniapp_uploads", alias="MINIAPP_MEDIA_STORAGE_DIR"
+    )
+    miniapp_max_upload_bytes: int = Field(
+        default=20 * 1024 * 1024, ge=1, le=50 * 1024 * 1024, alias="MINIAPP_MAX_UPLOAD_BYTES"
+    )
 
     @field_validator("app_env")
     @classmethod

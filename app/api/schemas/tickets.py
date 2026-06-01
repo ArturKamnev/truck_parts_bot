@@ -27,6 +27,10 @@ class MessageResponse(BaseModel):
     createdAt: datetime = Field(..., description="Creation timestamp")
     hasMedia: bool = Field(..., description="Whether message has media attachment")
     deliveryStatus: str | None = Field(None, alias="deliveryStatus", description="Delivery status of the message")
+    fileName: str | None = Field(None, description="Original uploaded file name")
+    mimeType: str | None = Field(None, description="Safe MIME type for the media")
+    fileSize: int | None = Field(None, description="File size in bytes")
+    downloadUrl: str | None = Field(None, description="Protected Mini App download URL")
 
     model_config = {
         "populate_by_name": True
@@ -64,4 +68,3 @@ class OwnerStatsResponse(BaseModel):
     claimed_tickets: int
     closed_tickets: int
     avg_first_claim_seconds: float | None
-

@@ -179,6 +179,10 @@ export function normalizeTicketMessage(msg: any): TicketMessage {
       captionPreview: null,
       createdAt: new Date().toISOString(),
       hasMedia: false,
+      fileName: null,
+      mimeType: null,
+      fileSize: null,
+      downloadUrl: null,
     };
   }
 
@@ -192,6 +196,10 @@ export function normalizeTicketMessage(msg: any): TicketMessage {
     createdAt: typeof msg.createdAt === "string" ? msg.createdAt : new Date().toISOString(),
     hasMedia: Boolean(msg.hasMedia),
     deliveryStatus: typeof msg.deliveryStatus === "string" ? msg.deliveryStatus : null,
+    fileName: typeof msg.fileName === "string" ? msg.fileName : null,
+    mimeType: typeof msg.mimeType === "string" ? msg.mimeType : null,
+    fileSize: msg.fileSize !== undefined && msg.fileSize !== null ? Number(msg.fileSize) : null,
+    downloadUrl: typeof msg.downloadUrl === "string" ? msg.downloadUrl : null,
   };
 }
 
@@ -245,6 +253,9 @@ export function normalizeBroadcast(b: any): Broadcast {
       status: "UNKNOWN",
       content_type: null,
       content_preview: null,
+      file_name: null,
+      mime_type: null,
+      file_size: null,
       button_selection: "none",
       recipient_count: 0,
       delivered_count: 0,
@@ -262,6 +273,9 @@ export function normalizeBroadcast(b: any): Broadcast {
     status: typeof b.status === "string" ? b.status : "UNKNOWN",
     content_type: typeof b.content_type === "string" ? b.content_type : null,
     content_preview: typeof b.content_preview === "string" ? b.content_preview : null,
+    file_name: typeof b.file_name === "string" ? b.file_name : null,
+    mime_type: typeof b.mime_type === "string" ? b.mime_type : null,
+    file_size: b.file_size !== undefined && b.file_size !== null ? Number(b.file_size) : null,
     button_selection: typeof b.button_selection === "string" ? b.button_selection : "none",
     recipient_count: Number(b.recipient_count) || 0,
     delivered_count: Number(b.delivered_count) || 0,

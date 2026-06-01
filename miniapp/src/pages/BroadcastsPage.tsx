@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, History, Radio, RefreshCw, Send, X } from "lucide-react";
+import { CheckCircle2, History, Paperclip, Radio, RefreshCw, Send, X } from "lucide-react";
 import {
   cancelBroadcast,
   createBroadcastDraft,
   getOwnerBroadcasts,
   previewBroadcast,
   sendBroadcast,
+  setBroadcastAttachment,
   setBroadcastButtons,
   setBroadcastContent,
   type Broadcast,
@@ -25,13 +26,14 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
   const [draft, setDraft] = useState<Broadcast | null>(null);
   const [preview, setPreview] = useState<BroadcastPreview | null>(null);
   const [text, setText] = useState("");
+  const [attachment, setAttachment] = useState<File | null>(null);
   const [buttonSelection, setButtonSelection] = useState("none");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const canPreview = useMemo(() => text.trim().length > 0 && !submitting, [text, submitting]);
+  const canPreview = useMemo(() => (text.trim().length > 0 || attachment !== null) && !submitting, [text, attachment, submitting]);
 
   const loadHistory = async () => {
     try {
@@ -56,7 +58,9 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
       setError(null);
       setSuccess(null);
       const activeDraft = draft || await createBroadcastDraft();
-      const contentDraft = await setBroadcastContent(activeDraft.id, text.trim());
+      const contentDraft = attachment
+        ? await setBroadcastAttachment(activeDraft.id, attachment, text.trim())
+        : await setBroadcastContent(activeDraft.id, text.trim());
       const readyDraft = await setBroadcastButtons(contentDraft.id, buttonSelection);
       const nextPreview = await previewBroadcast(readyDraft.id);
       setDraft(readyDraft);
@@ -78,6 +82,7 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
       setDraft(null);
       setPreview(null);
       setText("");
+      setAttachment(null);
       setButtonSelection("none");
       await loadHistory();
     } catch (err) {
@@ -98,6 +103,7 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
     setDraft(null);
     setPreview(null);
     setText("");
+    setAttachment(null);
     setButtonSelection("none");
     setError(null);
   };
@@ -149,6 +155,48 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
           placeholder={t("broadcast.text_placeholder", locale)}
           style={{ minHeight: "132px", resize: "vertical", borderRadius: "8px", border: "1px solid hsl(var(--border-hsl))", background: "hsl(var(--card-bg-hsl))", color: "#fff", padding: "12px", fontSize: "14px", lineHeight: 1.5, outline: "none" }}
         />
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "10px",
+            border: "1px dashed hsl(var(--border-hsl))",
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            color: attachment ? "#fff" : "hsl(var(--text-hint-hsl))",
+            cursor: submitting ? "not-allowed" : "pointer",
+            fontSize: "12px",
+            fontWeight: 700,
+          }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+            <Paperclip size={16} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {attachment ? attachment.name : t("broadcast.attachment_add", locale)}
+            </span>
+          </span>
+          {attachment && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                setAttachment(null);
+              }}
+              style={{ border: "none", background: "transparent", color: "hsl(var(--text-hint-hsl))", cursor: "pointer" }}
+            >
+              <X size={14} />
+            </button>
+          )}
+          <input
+            type="file"
+            disabled={submitting}
+            accept="image/*,video/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx"
+            onChange={(event) => setAttachment(event.target.files?.[0] || null)}
+            style={{ display: "none" }}
+          />
+        </label>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>
           {buttonOptions.map((option) => (
             <button
@@ -187,6 +235,12 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
         <section style={{ border: "1px solid hsl(var(--border-hsl))", background: "hsl(var(--card-bg-hsl))", borderRadius: "8px", padding: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
           <h3 style={{ margin: 0, fontSize: "15px", color: "#fff" }}>{t("broadcast.preview_title", locale)}</h3>
           <div style={{ whiteSpace: "pre-wrap", color: "#fff", fontSize: "14px", lineHeight: 1.5 }}>{preview.content_preview}</div>
+          {preview.file_name && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "hsl(var(--text-hint-hsl))", fontSize: "12px" }}>
+              <Paperclip size={14} />
+              <span>{preview.file_name}</span>
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "hsl(var(--text-hint-hsl))" }}>
             <span>{t("broadcast.recipients", locale)}</span>
             <b style={{ color: "#fff" }}>{preview.eligible_recipient_count}</b>
@@ -227,6 +281,11 @@ export const BroadcastsPage: React.FC<BroadcastsPageProps> = ({ locale }) => {
                 {item.content_preview && (
                   <span style={{ color: "#fff", fontSize: "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {item.content_preview}
+                  </span>
+                )}
+                {item.file_name && (
+                  <span style={{ color: "hsl(var(--text-hint-hsl))", fontSize: "11px" }}>
+                    {t("broadcast.attachment", locale)}: {item.file_name}
                   </span>
                 )}
                 <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", color: "hsl(var(--text-hint-hsl))", fontSize: "11px" }}>
